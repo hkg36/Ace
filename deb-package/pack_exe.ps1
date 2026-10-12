@@ -455,9 +455,6 @@ PrivilegesRequired=lowest
 WizardStyle=modern
 $iconConfig
 
-[Languages]
-Name: "chinesesimplified"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
-
 [Files]
 Source: "$stage\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
@@ -483,7 +480,7 @@ Filename: "{app}\crew-desktop\crew-desktop.exe"; Description: "{cm:LaunchProgram
 # -----------------------------------------------------------------------------
 # 7. 调用 Inno Setup 编译器 (ISCC) 进行最终打包
 # -----------------------------------------------------------------------------
-$isccPath = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+$isccPath = "D:\Scoop\shims\iscc.exe"
 
 if (-not (Test-Path $isccPath)) {
     Write-Host "⚠️ 找不到 Inno Setup 编译器！请前往 https://jrsoftware.org/isinfo.php 下载安装。" -ForegroundColor Red
