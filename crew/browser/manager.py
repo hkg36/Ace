@@ -8394,13 +8394,16 @@ class BrowserManager:
         function: str,
         *,
         ref: str = "",
+        in_frame: bool = False,
         filename: str = "",
         workdir: str = "",
     ) -> str:
         """Evaluate a Playwright-MCP-compatible function/expression on the page.
 
         A supplied Crew ref resolves to the same exact Locator used by ordinary
-        actions and is passed to the function as ``element``. Arbitrary page
+        actions and is passed to the function as ``element``. With ``in_frame``
+        the ref must be an iframe/frame node and the function runs inside that
+        frame's own document (cross-origin included). Arbitrary page
         JavaScript may mutate even when used for inspection, so the Host
         invalidates old refs and this method always returns a fresh snapshot
         together with the exact evaluation result.
@@ -8409,6 +8412,10 @@ class BrowserManager:
             raise BrowserDriverError("evaluate function 不能为空")
         if not isinstance(ref, str):
             raise BrowserDriverError("evaluate ref 必须是字符串")
+        if type(in_frame) is not bool:
+            raise BrowserDriverError("evaluate in_frame 必须是 boolean")
+        if in_frame and not ref:
+            raise BrowserDriverError("evaluate in_frame 必须同时传 iframe 的 ref")
         if not isinstance(filename, str):
             raise BrowserDriverError("evaluate filename 必须是字符串")
         expression = function
@@ -8424,6 +8431,8 @@ class BrowserManager:
             args = [expression]
             if ref:
                 args.append(self._native_ref(session, ref))
+                if in_frame:
+                    args.append("frame")
             result = await self._run(
                 owner,
                 session,

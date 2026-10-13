@@ -8709,9 +8709,11 @@ export class BrowserHost extends EventEmitter {
     args: string[],
     commandDeadlineAt: number,
   ): Promise<Record<string, unknown>> {
-    if (args.length < 1 || args.length > 2 || !args[0]) invalidCommandArgs();
+    if (args.length < 1 || args.length > 3 || !args[0]) invalidCommandArgs();
     const expression = args[0];
     const nativeRef = args[1] ?? '';
+    const inFrame = args[2] === 'frame';
+    if (args.length === 3 && (!inFrame || !nativeRef)) invalidCommandArgs();
     const ctx = await this.actionContext(
       tab,
       remainingCommandTimeoutMs(commandDeadlineAt),
@@ -8719,7 +8721,41 @@ export class BrowserHost extends EventEmitter {
     tab.visualEpoch = null;
     try {
       const evaluated = await pwActions.withActionCompletion(ctx, async () => (
-        nativeRef
+        inFrame
+          ? await (async () => {
+              const record = this.ref(tab, nativeRef);
+              const locator = record.playwrightRef
+                ? locatorFromRef(ctx.page, record.playwrightRef)
+                : ctx.page.locator(record.selector);
+              const handle = await locator.elementHandle({
+                timeout: remainingCommandTimeoutMs(commandDeadlineAt),
+              });
+              try {
+                const frame = await handle.contentFrame();
+                if (!frame) {
+                  throw new BrowserHostError('ref 不是 iframe/frame 节点，或其内容尚未加载', {
+                    code: 'invalid_ref',
+                  });
+                }
+                return await withDeadline(
+                  frame.evaluate(async (pageExpression) => {
+                    const value = globalThis.eval(`(${pageExpression})`);
+                    const isFunction = typeof value === 'function';
+                    const result = await (isFunction ? value() : value);
+                    return { result, isFunction, isUndefined: result === undefined };
+                  }, expression),
+                  remainingCommandTimeoutMs(commandDeadlineAt),
+                  () => new BrowserHostError('frame.evaluate 超过命令截止时间', {
+                    code: 'command_timeout',
+                    uncertain: true,
+                    phase: 'dispatching',
+                  }),
+                );
+              } finally {
+                await handle.dispose().catch(() => undefined);
+              }
+            })()
+          : nativeRef
           ? await (() => {
               const record = this.ref(tab, nativeRef);
               const locator = record.playwrightRef

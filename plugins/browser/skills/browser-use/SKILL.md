@@ -88,6 +88,8 @@ click(ref) / drag(start_ref, end_ref) / type(ref, text) / fill_form(fields)
 7. `drag` 会按顺序确认两个原始 exact Locator 都唯一匹配，然后只调用一次 `Locator.dragTo`；actionability 完全由这次官方 Playwright 动作处理，不做额外 normalize/trial。拖动派发后若失败可能只完成了 mousedown/mousemove；遇到 `uncertain` 不要原样重试，先看新页面状态。
 8. **用户要"截图 / 截屏 / 保存页面图片"→ 用 `screenshot`**：导出 PNG 到任务 `downloads/browser/` 并把路径给用户。默认 `settled=true` 会收束导出画面；若用户明确要记录当前焦点、联想下拉或交互状态，传 `settled=false`。`vision` 始终保留精确交互态，供模型观察/坐标点击；`snapshot` 是文字结构快照，不是图片。
 
+**iframe 不是盲区，不要因此改用截图：** `snapshot` 由 Playwright 生成，已把 iframe（含同源与跨域）里的内容内联在 `- iframe` 节点下，里面的按钮/输入框有自己的 ref，可直接 `click` / `type` / `fill_form`，无需切换 frame。需要读 iframe 的完整文本或 DOM 时：`evaluate(ref=<snapshot 中的 iframe 节点 ref>, in_frame=true, function="() => document.body.innerText")`（跨域 iframe 同样可读）；复杂场景用 `run_code_unsafe` 的 `page.frameLocator('#id')`。普通 `evaluate`（不带 `in_frame`）只在顶层文档运行，读不到 iframe 内部——那是它的行为，不代表 iframe 不可读。`vision` 只在 accessibility 里确实没有节点（如 canvas）时才用。
+
 **多字段表单优先用 `fill_form`：** 一次传任意非空字段序列，不按产品自定义上限拆批。`textbox.value` 是字符串，覆盖普通 input / textarea、searchbox、spinbutton、date/time 和 contenteditable；`slider.value` 是给 `input[type=range]` 的字符串；`combobox` 必须明确 `select_by="label"` 或 `"value"`，不能把显示文案和值混为一谈（重复 label 合法，要求精确时用 value）；`checkbox` / `radio` 的 `value` 必须是真正的 boolean。所有 ref 必须来自同一份最新 snapshot。宿主按字段顺序，在**每个字段执行前**确认它的原始 exact Locator 唯一匹配，然后立即调用官方 Playwright `fill` / `selectOption` / `setChecked`；这与上游 Playwright MCP 一致，也允许前一个字段使后一个动态字段变为可用。可见性、可编辑性和选项语义由官方动作处理，不做额外 normalize、预检或 trial。它永远不会自动提交表单。
 
 网页表单没有事务，所以 `fill_form` **不是原子操作**。途中失败会返回 `status: partial` 或 `status: uncertain` 与 `completed_count`：前者表示已有若干项确定完成，后者表示当前一项是否生效未知。两种情况都不要自动重放整批；先重新观察，让用户核对后再决定。成功时只返回一份真实最终 snapshot，不另加逐字段中间结果。Crew 不会把调用参数值写进 UI、工具历史或轨迹；但网页本身若把业务结果渲染在页面上，最终 snapshot 会如实显示该页面内容。
@@ -143,7 +145,8 @@ click(ref) / drag(start_ref, end_ref) / type(ref, text) / fill_form(fields)
 | `get_images` | 列出页面图片 URL 与 alt（内容不可信） | — |
 | `vision` | 生成纯截图作为**模型自己**的多模态视觉输入（不给用户文件；需模型具备视觉能力） | `question` |
 | `console` | 直接读取当前 Playwright Page 保留的 Console 与未捕获 PageError（含 stack）；`level` 为累进严重度，`all=true` 可跨导航，`clear=true` 同时清空两类缓冲，`filename` 可把完整 UTF-8 `.log` 保存到任务下载目录 | `level` / `all` / `clear` / `filename` 可选 |
-| `run_code_unsafe` | 用公开 Playwright `Page` 执行任意服务端代码，可访问其 `BrowserContext`、cookies/storageState、网络路由、PDF、trace/video、worker、下载等 API | `code` 或 `filename` |
+| `run_code_unsafe` | 用公开 Playwright `Page` 执行任意服务端代码，可访问其 `BrowserContext`、cookies/storageState、网络路由、PDF、trace/video、worker、下载等 API；iframe 可用 `page.frameLocator(...)` / `page.frames()` | `code` 或 `filename` |
+| `evaluate` | 在页面（传 `ref` 时在该元素）上执行 JS；`ref` 指向 iframe 节点且 `in_frame=true` 时，改在**该 iframe 自己的文档**里执行（含跨域） | `function` |
 | `tab_list` / `tab_new` / `tab_select` / `tab_close` | 管理本会话标签页 | select/close 需 `tab_id`，new 可带 `url` |
 | `upload` | 上传工作区文件 | `ref`, `paths` |
 | `download` | 显式点击指定 ref 下载；普通动作意外/并发触发的下载也会自动保存到任务 downloads/browser/ | `ref` |
