@@ -211,7 +211,7 @@ RUN apt-get update -o Acquire::Check-Valid-Until=false && apt-get install -y --n
 # 与 Windows pack_exe.ps1 对齐：技能脚本需要 python/node，
 # 目标 UOS/信创系统可能未预装或版本过旧，打包内嵌运行时确保开箱即用。
 ARG BUNDLED_PYTHON_VERSION=3.11.9
-ARG BUNDLED_NODE_VERSION=20.18.3
+ARG BUNDLED_NODE_VERSION=22.18.0
 
 # Python standalone (indygreg/python-build-standalone) — 自包含，无系统依赖
 # 直接从官方发布地址下载；如构建环境需要代理，由调用方通过标准代理环境变量配置。

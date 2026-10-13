@@ -42,7 +42,7 @@ case "$ARCH" in
 esac
 DMG_NAME="crew-desktop_${VERSION}_${ARCH}.dmg"
 BUNDLED_PYTHON_VERSION="3.11.9"
-BUNDLED_NODE_VERSION="20.18.3"
+BUNDLED_NODE_VERSION="22.18.0"
 
 HOST_ARCH="$(uname -m)"
 case "$HOST_ARCH" in

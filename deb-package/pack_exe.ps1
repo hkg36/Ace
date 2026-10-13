@@ -49,7 +49,7 @@ if (Test-Path $DesktopPkgPath) {
 
 # 打包内嵌运行时版本
 $BundledPythonVersion = "3.11.9"
-$BundledNodeVersion    = "20.18.3"
+$BundledNodeVersion    = "22.18.0"
 
 Write-Host "===========================================" -ForegroundColor Cyan
 Write-Host " 构建 Windows amd64 安装包 (Inno Setup)" -ForegroundColor Cyan
@@ -360,9 +360,13 @@ foreach ($dep in $heavyDeps) {
 Write-Host "✓ Python 运行时已复制到 staging" -ForegroundColor Green
 
 # ---- Node.js portable ----
-$nodeCacheDir = Join-Path $runtimesCache "node"
+$nodeCacheDir = Join-Path $runtimesCache "node-$BundledNodeVersion"
 $nodeCacheExe = Join-Path $nodeCacheDir "node.exe"
 $nodeRtDir  = Join-Path $runtimesDir "node"
+
+if ((Test-Path $nodeCacheDir) -and -not (Test-Path $nodeCacheExe)) {
+    Remove-Item $nodeCacheDir -Recurse -Force
+}
 
 if (-not (Test-Path $nodeCacheExe)) {
     Write-Host "正在下载 Node.js v$BundledNodeVersion portable..." -ForegroundColor Yellow
@@ -383,9 +387,17 @@ if (-not (Test-Path $nodeCacheExe)) {
     if (-not (Test-Path (Join-Path $nodeCacheDir "node.exe"))) {
         throw "❌ Node.js 解压后未找到 node.exe"
     }
-    Write-Host "✓ Node.js v$BundledNodeVersion portable 已缓存到 runtimes-cache/node/" -ForegroundColor Green
+    $cachedNodeVersion = (& $nodeCacheExe --version | Out-String).Trim()
+    if ($cachedNodeVersion -ne "v$BundledNodeVersion") {
+        throw "❌ Node.js 版本不匹配: 预期 v$BundledNodeVersion，实际 $cachedNodeVersion"
+    }
+    Write-Host "✓ Node.js v$BundledNodeVersion portable 已缓存到 runtimes-cache/node-$BundledNodeVersion/" -ForegroundColor Green
 } else {
-    Write-Host "✓ Node.js portable 缓存已存在，跳过下载" -ForegroundColor Green
+    $cachedNodeVersion = (& $nodeCacheExe --version | Out-String).Trim()
+    if ($cachedNodeVersion -ne "v$BundledNodeVersion") {
+        throw "❌ Node.js 缓存版本不匹配: 预期 v$BundledNodeVersion，实际 $cachedNodeVersion"
+    }
+    Write-Host "✓ Node.js v$BundledNodeVersion portable 缓存已存在，跳过下载" -ForegroundColor Green
 }
 # 复制缓存到 staging
 if (Test-Path $nodeRtDir) { Remove-Item $nodeRtDir -Recurse -Force }
