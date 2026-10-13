@@ -15,7 +15,12 @@ import pytest
 from crew.browser.driver import BrowserDriver, BrowserDriverError
 from crew.browser.electron_driver import ElectronBrowserDriver
 from crew.browser.manager import BrowserManager, _truncate_snapshot_at_line
-from crew.browser.security import BrowserNetworkDenied, BrowserNetworkPolicy, LoopbackPolicyProxy
+from crew.browser.security import (
+    BrowserNetworkDenied,
+    BrowserNetworkPolicy,
+    LoopbackPolicyProxy,
+    ResolvedTarget,
+)
 from crew.browser.tools import BROWSER_SCHEMAS
 from crew.browser.types import BrowserConfig
 from crew.core.runctx import current_tool_call_id
@@ -827,6 +832,185 @@ async def test_loopback_proxy_requires_per_instance_credentials() -> None:
         await writer.wait_closed()
     finally:
         await proxy.aclose()
+
+
+async def test_loopback_proxy_forwards_http_hostname_via_configured_upstream() -> None:
+    upstream_requests: list[bytes] = []
+
+    async def upstream(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        try:
+            request = await reader.readuntil(b"\r\n\r\n")
+            upstream_requests.append(request)
+            writer.write(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nOK")
+            await writer.drain()
+        finally:
+            writer.close()
+            await writer.wait_closed()
+
+    upstream_server = await asyncio.start_server(upstream, "127.0.0.1", 0)
+    upstream_port = int(upstream_server.sockets[0].getsockname()[1])
+    proxy = LoopbackPolicyProxy(
+        BrowserNetworkPolicy(
+            BrowserConfig(
+                allowed_private_hosts=["localhost"],
+                upstream_proxy_url=f"http://127.0.0.1:{upstream_port}",
+            )
+        )
+    )
+    await proxy.start()
+    original_proxy_url = proxy.url
+    proxy.set_upstream_proxy(f"http://127.0.0.1:{upstream_port}")
+    assert proxy.url != original_proxy_url
+    local = urlsplit(proxy.url)
+    local_auth = base64.b64encode(
+        f"{local.username}:{local.password}".encode("utf-8")
+    ).decode("ascii")
+    writer: asyncio.StreamWriter | None = None
+    try:
+        reader, writer = await asyncio.open_connection(local.hostname, local.port)
+        writer.write(
+            (
+                "GET http://localhost:12345/path?q=1 HTTP/1.1\r\n"
+                "Host: localhost:12345\r\n"
+                f"Proxy-Authorization: Basic {local_auth}\r\n"
+                "Connection: close\r\n\r\n"
+            ).encode("ascii")
+        )
+        await writer.drain()
+        response = await reader.read()
+        assert b"200 OK" in response
+        assert response.endswith(b"OK")
+    finally:
+        if writer is not None:
+            writer.close()
+            await writer.wait_closed()
+        await proxy.aclose()
+        upstream_server.close()
+        await upstream_server.wait_closed()
+
+    assert len(upstream_requests) == 1
+    request_head = upstream_requests[0].decode("latin-1")
+    assert request_head.startswith("GET http://localhost:12345/path?q=1 HTTP/1.1")
+    assert "Host: localhost:12345\r\n" in request_head
+    assert "Proxy-Authorization: Basic " not in request_head
+
+
+async def test_loopback_proxy_preserves_hostname_for_upstream_connect() -> None:
+    upstream_request: list[bytes] = []
+
+    async def upstream(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        try:
+            upstream_request.append(await reader.readuntil(b"\r\n\r\n"))
+            writer.write(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+            await writer.drain()
+            payload = await reader.readexactly(4)
+            writer.write(payload)
+            await writer.drain()
+        finally:
+            writer.close()
+            await writer.wait_closed()
+
+    upstream_server = await asyncio.start_server(upstream, "127.0.0.1", 0)
+    upstream_port = int(upstream_server.sockets[0].getsockname()[1])
+    proxy = LoopbackPolicyProxy(
+        BrowserNetworkPolicy(
+            BrowserConfig(
+                allowed_private_hosts=["localhost"],
+                upstream_proxy_url=f"http://127.0.0.1:{upstream_port}",
+            )
+        )
+    )
+    await proxy.start()
+    local = urlsplit(proxy.url)
+    local_auth = base64.b64encode(
+        f"{local.username}:{local.password}".encode("utf-8")
+    ).decode("ascii")
+    writer: asyncio.StreamWriter | None = None
+    try:
+        reader, writer = await asyncio.open_connection(local.hostname, local.port)
+        writer.write(
+            (
+                "CONNECT localhost:443 HTTP/1.1\r\n"
+                "Host: localhost:443\r\n"
+                f"Proxy-Authorization: Basic {local_auth}\r\n\r\n"
+            ).encode("ascii")
+        )
+        await writer.drain()
+        assert b"200 Connection Established" in await reader.readuntil(b"\r\n\r\n")
+        writer.write(b"ping")
+        await writer.drain()
+        assert await reader.readexactly(4) == b"ping"
+    finally:
+        if writer is not None:
+            writer.close()
+            await writer.wait_closed()
+        await proxy.aclose()
+        upstream_server.close()
+        await upstream_server.wait_closed()
+
+    connect_head = upstream_request[0].decode("latin-1")
+    assert connect_head.startswith("CONNECT localhost:443 HTTP/1.1")
+
+
+async def test_loopback_proxy_does_not_resolve_hostname_before_upstream_connect(
+    monkeypatch,
+) -> None:
+    upstream_targets: list[str] = []
+
+    async def upstream(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        try:
+            request = await reader.readuntil(b"\r\n\r\n")
+            target = request.split(b" ", 2)[1].decode("ascii")
+            upstream_targets.append(target)
+            writer.write(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+            await writer.drain()
+            payload = await reader.readexactly(4)
+            writer.write(payload)
+            await writer.drain()
+        finally:
+            writer.close()
+            await writer.wait_closed()
+
+    upstream_server = await asyncio.start_server(upstream, "127.0.0.1", 0)
+    upstream_port = int(upstream_server.sockets[0].getsockname()[1])
+    policy = BrowserNetworkPolicy(
+        BrowserConfig(upstream_proxy_url=f"http://127.0.0.1:{upstream_port}")
+    )
+
+    async def unexpected_resolve(_hostname: str, _port: int) -> list[ResolvedTarget]:
+        raise AssertionError("configured upstream proxy must resolve the target hostname")
+
+    monkeypatch.setattr(policy, "resolve_candidates", unexpected_resolve)
+    proxy = LoopbackPolicyProxy(policy)
+    await proxy.start()
+    local = urlsplit(proxy.url)
+    local_auth = base64.b64encode(
+        f"{local.username}:{local.password}".encode("utf-8")
+    ).decode("ascii")
+    writer: asyncio.StreamWriter | None = None
+    try:
+        reader, writer = await asyncio.open_connection(local.hostname, local.port)
+        writer.write(
+            (
+                "CONNECT assets.example.test:443 HTTP/1.1\r\n"
+                "Host: assets.example.test:443\r\n"
+                f"Proxy-Authorization: Basic {local_auth}\r\n\r\n"
+            ).encode("ascii")
+        )
+        await writer.drain()
+        assert b"200 Connection Established" in await reader.readuntil(b"\r\n\r\n")
+        writer.write(b"ping")
+        await writer.drain()
+        assert await reader.readexactly(4) == b"ping"
+    finally:
+        if writer is not None:
+            writer.close()
+            await writer.wait_closed()
+        await proxy.aclose()
+        upstream_server.close()
+        await upstream_server.wait_closed()
+
+    assert upstream_targets == ["assets.example.test:443"]
 
 
 async def test_loopback_proxy_does_not_reuse_http_socket_for_blocked_host() -> None:

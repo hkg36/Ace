@@ -435,6 +435,13 @@ export interface BackendConfig {
   };
 }
 
+export interface BrowserProxySettings {
+  ok: boolean;
+  server: string;
+  username: string;
+  has_password: boolean;
+}
+
 export interface Workspace {
   id: string;
   name: string;
@@ -1595,6 +1602,12 @@ export const backendApi = {
     `/api/sites/${encodeURIComponent(siteId)}/export`, { method: 'POST', ...jsonBody({}) },
   ),
   config: () => getJSON<BackendConfig>('/api/config'),
+  browserProxy: () => getJSON<BrowserProxySettings>('/api/config/browser-proxy'),
+  saveBrowserProxy: (payload: { server: string; username: string; password: string }) =>
+    getJSON<BrowserProxySettings>('/api/config/browser-proxy', {
+      method: 'PUT',
+      ...jsonBody(payload),
+    }),
   switchModel: (modelId: string) =>
     getJSON<BackendConfig>('/api/config/model', { method: 'POST', ...jsonBody({ model_id: modelId }) }),
   createModel: (payload: ModelPayload) =>

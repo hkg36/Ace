@@ -134,6 +134,53 @@ async def test_create_model_success(api, tmp_path: Path, auth_headers):
 
 
 @pytest.mark.asyncio
+async def test_browser_proxy_settings_are_persisted_without_exposing_password(api, tmp_path: Path, auth_headers):
+    api.state.crew.config.gateway_admin_accounts = []
+    transport = ASGITransport(app=api)
+    async with AsyncClient(transport=transport, base_url="http://test", headers=auth_headers) as client:
+        saved = await client.put(
+            "/api/config/browser-proxy",
+            json={
+                "server": "http://127.0.0.1:7890",
+                "username": "browser-user",
+                "password": "browser-secret",
+            },
+        )
+        assert saved.status_code == 200, saved.text
+        assert saved.json() == {
+            "ok": True,
+            "server": "http://127.0.0.1:7890",
+            "username": "browser-user",
+            "has_password": True,
+        }
+
+        updated = await client.put(
+            "/api/config/browser-proxy",
+            json={
+                "server": "https://proxy.example.com:8443",
+                "username": "browser-user",
+                "password": "",
+            },
+        )
+        assert updated.status_code == 200, updated.text
+        assert updated.json()["has_password"] is True
+
+        invalid = await client.put(
+            "/api/config/browser-proxy",
+            json={"server": "socks5://127.0.0.1:1080", "username": "", "password": ""},
+        )
+        assert invalid.status_code == 400
+
+    config = api.state.crew.config
+    assert config.browser.upstream_proxy_url == (
+        "https://browser-user:browser-secret@proxy.example.com:8443"
+    )
+    persisted = yaml.safe_load((tmp_path / "config.yaml").read_text(encoding="utf-8"))
+    assert persisted["tools"]["browser"]["upstream_proxy_url"] == config.browser.upstream_proxy_url
+    assert not getattr(config.network, "proxy_url", "")
+
+
+@pytest.mark.asyncio
 async def test_local_owner_can_create_model(api, auth_headers):
     transport = ASGITransport(app=api)
     async with AsyncClient(transport=transport, base_url="http://test", headers=auth_headers) as client:

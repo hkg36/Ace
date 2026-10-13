@@ -26,7 +26,12 @@ from urllib.parse import urlsplit
 
 from crew.browser.driver import BrowserDriver, BrowserDriverError, BrowserOperationCancelled
 from crew.browser.electron_driver import ElectronBrowserDriver
-from crew.browser.security import BrowserNetworkPolicy, LoopbackPolicyProxy, path_is_within
+from crew.browser.security import (
+    BrowserNetworkPolicy,
+    LoopbackPolicyProxy,
+    path_is_within,
+    validate_upstream_proxy_url,
+)
 from crew.browser.types import BrowserConfig, BrowserPageState, BrowserRef
 from crew.core.types import MediaPart, ToolOutput, ToolPermissionDecision
 from crew.state.home import get_owner_runtime_home
@@ -416,6 +421,15 @@ class BrowserManager:
         # ref、截图与标签页句柄一律不可复用（见 revoke_owner）。
         self._capability_generations: dict[str, int] = {}
         self._closed = False
+
+    async def update_upstream_proxy(self, proxy_url: str) -> None:
+        """Apply the browser-only upstream proxy to active policy proxies."""
+        normalized = validate_upstream_proxy_url(proxy_url)
+        async with self._owners_lock:
+            self.config.upstream_proxy_url = normalized
+            for owner in self._owners.values():
+                if owner.proxy is not None:
+                    owner.proxy.set_upstream_proxy(normalized)
 
     def available(self) -> bool:
         return bool(self.config.enabled and self.driver.available())

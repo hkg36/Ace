@@ -9,10 +9,11 @@ import ipaddress
 import re
 import secrets
 import socket
+import ssl
 from contextlib import suppress
 from dataclasses import dataclass
 from typing import Iterable
-from urllib.parse import urlsplit
+from urllib.parse import SplitResult, unquote, urlsplit, urlunsplit
 
 from crew.browser.types import BrowserConfig
 from crew.state.logging import get_logger
@@ -22,6 +23,33 @@ log = get_logger("browser.security")
 
 class BrowserNetworkDenied(ValueError):
     pass
+
+
+def validate_upstream_proxy_url(value: str) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    try:
+        parsed = urlsplit(raw)
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError("浏览器代理地址无效") from exc
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.path not in {"", "/"}
+        or parsed.query
+        or parsed.fragment
+        or (port is not None and not 1 <= port <= 65535)
+    ):
+        raise ValueError("浏览器代理仅支持 http:// 或 https:// 地址及可选用户名密码")
+    if any(char in raw for char in "\r\n"):
+        raise ValueError("浏览器代理地址无效")
+    try:
+        _normalized_host(parsed.hostname)
+    except BrowserNetworkDenied as exc:
+        raise ValueError("浏览器代理主机名无效") from exc
+    return raw
 
 
 _METADATA_ADDRESSES = frozenset(
@@ -186,6 +214,13 @@ class LoopbackPolicyProxy:
         self._server: asyncio.AbstractServer | None = None
         self._username = "crew"
         self._password = secrets.token_urlsafe(32)
+        self._upstream_proxy_url = validate_upstream_proxy_url(
+            policy.config.upstream_proxy_url
+        )
+
+    def set_upstream_proxy(self, proxy_url: str) -> None:
+        self._upstream_proxy_url = validate_upstream_proxy_url(proxy_url)
+        self._password = secrets.token_urlsafe(32)
 
     @property
     def url(self) -> str:
@@ -235,6 +270,81 @@ class LoopbackPolicyProxy:
         assert last_error is not None  # resolve_candidates never returns empty
         raise last_error
 
+    def _upstream(self) -> SplitResult | None:
+        return urlsplit(self._upstream_proxy_url) if self._upstream_proxy_url else None
+
+    @staticmethod
+    def _upstream_auth(parsed: SplitResult | None) -> str:
+        if parsed is None or parsed.username is None:
+            return ""
+        credentials = (
+            f"{unquote(parsed.username)}:{unquote(parsed.password or '')}"
+        ).encode("utf-8")
+        return "Proxy-Authorization: Basic " + base64.b64encode(credentials).decode("ascii")
+
+    async def _connect_upstream(
+        self, parsed: SplitResult
+    ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+        if parsed is None:
+            raise BrowserNetworkDenied("浏览器上游代理未配置")
+        return await asyncio.wait_for(
+            asyncio.open_connection(
+                parsed.hostname,
+                parsed.port or (443 if parsed.scheme == "https" else 80),
+                ssl=ssl.create_default_context() if parsed.scheme == "https" else None,
+                server_hostname=parsed.hostname if parsed.scheme == "https" else None,
+            ),
+            timeout=self._CONNECT_TIMEOUT,
+        )
+
+    async def _open_tunnel(
+        self,
+        candidates: list[ResolvedTarget] | None,
+        *,
+        upstream: SplitResult | None,
+        hostname: str,
+        port: int,
+        client_writer: asyncio.StreamWriter,
+    ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter] | None:
+        if upstream is None:
+            if not candidates:
+                raise BrowserNetworkDenied("目标地址解析结果为空")
+            return await self._connect(candidates)
+        if candidates is None:
+            reader, writer = await self._connect_upstream(upstream)
+            display_host = f"[{hostname}]" if ":" in hostname else hostname
+            authority = f"{display_host}:{port}"
+            auth = self._upstream_auth(upstream)
+            request = (
+                f"CONNECT {authority} HTTP/1.1\r\n"
+                f"Host: {authority}\r\n"
+                + (f"{auth}\r\n" if auth else "")
+                + "Proxy-Connection: Keep-Alive\r\n\r\n"
+            )
+            try:
+                writer.write(request.encode("latin-1"))
+                await writer.drain()
+                head = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), timeout=10)
+                if len(head) > 64 * 1024:
+                    raise BrowserNetworkDenied("上游代理响应头过大")
+                first = head.split(b"\r\n", 1)[0].decode("latin-1", errors="replace")
+                match = re.fullmatch(r"HTTP/(?:1\.0|1\.1) ([0-9]{3})(?: .*)?", first)
+                if match is None:
+                    raise BrowserNetworkDenied("上游代理返回了无效 CONNECT 响应")
+                if match.group(1) != "200":
+                    client_writer.write(head)
+                    await client_writer.drain()
+                    writer.close()
+                    with suppress(Exception):
+                        await writer.wait_closed()
+                    return None
+                return reader, writer
+            except BaseException:
+                writer.close()
+                with suppress(Exception):
+                    await writer.wait_closed()
+                raise
+
     async def _handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         remote_writer: asyncio.StreamWriter | None = None
         try:
@@ -265,10 +375,30 @@ class LoopbackPolicyProxy:
             if len(parts) != 3:
                 raise BrowserNetworkDenied("无效代理请求")
             method, target, version = parts
+            upstream = self._upstream()
             if method.upper() == "CONNECT":
                 hostname, port = self._split_authority(target, 443)
-                candidates = await self.policy.resolve_candidates(hostname, port)
-                _remote_reader, remote_writer = await self._connect(candidates)
+                hostname = self.policy.validate_hostname(hostname)
+                candidates = None
+                if upstream is None:
+                    candidates = await self.policy.resolve_candidates(hostname, port)
+                else:
+                    try:
+                        ipaddress.ip_address(hostname)
+                    except ValueError:
+                        pass
+                    else:
+                        self.policy.validate_ip(hostname, hostname)
+                tunnel = await self._open_tunnel(
+                    candidates,
+                    upstream=upstream,
+                    hostname=hostname,
+                    port=port,
+                    client_writer=writer,
+                )
+                if tunnel is None:
+                    return
+                _remote_reader, remote_writer = tunnel
                 writer.write(b"HTTP/1.1 200 Connection Established\r\n\r\n")
                 await writer.drain()
                 await self._relay_bidirectional(reader, writer, _remote_reader, remote_writer)
@@ -278,7 +408,18 @@ class LoopbackPolicyProxy:
             if parsed.scheme not in {"http", "ws"} or not parsed.hostname:
                 raise BrowserNetworkDenied("HTTP 代理仅接受绝对 http/ws URL")
             port = parsed.port or 80
-            candidates = await self.policy.resolve_candidates(parsed.hostname, port)
+            candidates = None
+            if upstream is None:
+                candidates = await self.policy.resolve_candidates(parsed.hostname, port)
+                target_hostname = candidates[0].hostname
+            else:
+                target_hostname = self.policy.validate_hostname(parsed.hostname)
+                try:
+                    ipaddress.ip_address(target_hostname)
+                except ValueError:
+                    pass
+                else:
+                    self.policy.validate_ip(target_hostname, target_hostname)
             headers = self._parse_headers(header_lines)
             body_kind, body_length = self._request_body(headers)
             is_websocket = parsed.scheme == "ws"
@@ -291,16 +432,35 @@ class LoopbackPolicyProxy:
                     raise BrowserNetworkDenied("无效 WebSocket upgrade 请求")
             elif any(name == "upgrade" for name, _value in headers):
                 raise BrowserNetworkDenied("普通 HTTP 请求不允许协议升级")
-            remote_reader, remote_writer = await self._connect(candidates)
+            if upstream is None and candidates is not None:
+                remote_reader, remote_writer = await self._connect(candidates)
+            else:
+                remote_reader, remote_writer = await self._connect_upstream(upstream)
             path = parsed.path or "/"
             if parsed.query:
                 path += f"?{parsed.query}"
+            if upstream is not None:
+                upstream_host = (
+                    f"[{target_hostname}]" if ":" in target_hostname else target_hostname
+                )
+                upstream_port = f":{port}" if parsed.port is not None else ""
+                path = urlunsplit((
+                    "http" if is_websocket else parsed.scheme,
+                    f"{upstream_host}{upstream_port}",
+                    parsed.path or "/",
+                    parsed.query,
+                    "",
+                ))
             forwarded_headers = self._forward_headers(
                 headers,
-                hostname=candidates[0].hostname,
+                hostname=target_hostname,
                 port=port,
                 websocket=is_websocket,
             )
+            if upstream is not None:
+                auth = self._upstream_auth(upstream)
+                if auth:
+                    forwarded_headers.append(auth)
             remote_writer.write(
                 (
                     f"{method} {path} {version}\r\n"

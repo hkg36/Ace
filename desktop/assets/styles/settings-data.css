@@ -33,6 +33,25 @@
   gap: var(--mw-space-4);
 }
 
+.settings-proxy-form {
+  max-width: 560px;
+}
+
+.settings-proxy-status {
+  min-height: 1.5em;
+  margin: 0;
+  color: var(--mw-text-secondary);
+  font-size: var(--mw-type-compact-size);
+}
+
+.settings-proxy-status[data-tone='danger'] {
+  color: var(--mw-status-danger);
+}
+
+.settings-proxy-status[data-tone='success'] {
+  color: var(--mw-status-success);
+}
+
 .settings-data__toolbar {
   display: grid;
   grid-template-columns: 156px minmax(220px, 1fr) auto;

@@ -822,6 +822,47 @@ class Config:
         tmp_path.replace(yaml_path)
         return yaml_path
 
+    def persist_browser_config(self) -> Path:
+        """把内置浏览器代理设置写回 config.yaml 的 tools.browser 段。"""
+        with _CONFIG_WRITE_LOCK:
+            if not self.config_path:
+                raise RuntimeError("config_path 未设置，无法写回（Config 不是从 yaml 加载的）")
+
+            yaml_path = Path(self.config_path)
+            if yaml_path.exists():
+                try:
+                    data = yaml.safe_load(yaml_path.read_text(encoding="utf-8")) or {}
+                    if not isinstance(data, dict):
+                        data = {}
+                except yaml.YAMLError:
+                    raise RuntimeError(f"config.yaml 解析失败，拒绝写回以保护原文件: {yaml_path}")
+            else:
+                data = {}
+
+            tools = data.get("tools")
+            if not isinstance(tools, dict):
+                tools = {}
+                data["tools"] = tools
+            browser = tools.get("browser")
+            if not isinstance(browser, dict):
+                browser = {}
+                tools["browser"] = browser
+            browser["upstream_proxy_url"] = self.browser.upstream_proxy_url
+            self.raw_config = data
+
+            yaml_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp_path = yaml_path.with_suffix(yaml_path.suffix + ".tmp")
+            with tmp_path.open("w", encoding="utf-8") as stream:
+                yaml.safe_dump(
+                    data,
+                    stream,
+                    allow_unicode=True,
+                    sort_keys=False,
+                    default_flow_style=False,
+                )
+            tmp_path.replace(yaml_path)
+            return yaml_path
+
     def set_mcp_server(self, name: str, cfg: dict[str, Any]) -> None:
         """在运行时更新 mcp_servers 配置（不自动持久化）。"""
         if not isinstance(self.mcp_servers, dict):

@@ -33,6 +33,7 @@ import {
 } from './settings-preferences';
 import { createSettingsShell, type SettingsShell } from './settings-shell';
 import { mountSettingsDataPanes } from './settings-data';
+import { mountBrowserProxyPane, renderBrowserProxyPane } from './settings-proxy';
 import { disposeMcpPane } from './settings-mcp';
 import { productModeStore } from '../stores/product-mode-store';
 
@@ -566,6 +567,9 @@ function onSettingsPaneOpened(pane: string): void {
   if (pane === 'mcp') {
     void import('./settings-mcp').then((m) => void m.bindMcpPane());
   }
+  if (pane === 'proxy') {
+    void renderBrowserProxyPane();
+  }
   if (pane === 'work') {
     const workPane = document.getElementById('settings-pane-work');
     if (workPane) void import('./work/settings').then((module) => void module.renderWorkSettings(workPane));
@@ -574,6 +578,7 @@ function onSettingsPaneOpened(pane: string): void {
 
 export function bindSettingsUi(): void {
   mountSettingsDataPanes();
+  mountBrowserProxyPane();
   mountSettingsShell();
   $('#settings-btn')?.addEventListener('click', openSettingsModal);
   bindSettingsNav();

@@ -128,6 +128,9 @@ tools:
     max_output_chars: 30000
     max_transfer_bytes: 104857600
     artifact_ttl_hours: 24
+    # 内置浏览器专用上游代理；留空时通过本机策略代理直连目标。
+    # 支持 http:// 或 https:// 地址，可在设置页面管理。
+    upstream_proxy_url: ""
     allowed_private_hosts: []
     allowed_private_cidrs: []
     blocked_hosts: []

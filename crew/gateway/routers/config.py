@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import quote, unquote, urlsplit, urlunsplit
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
+from crew.browser.security import validate_upstream_proxy_url
 from crew.gateway.auth import AuthenticationError, account_from_request, require_admin
 from crew.gateway.helpers import config_body
 
@@ -36,6 +38,98 @@ def create_config_router(crew, dispatcher=None) -> APIRouter:
             include_builtin_profiles=True,
             is_gateway_admin=is_admin,
         )
+
+    def _browser_proxy_body() -> dict[str, Any]:
+        proxy_url = crew.config.browser.upstream_proxy_url
+        parsed = urlsplit(proxy_url) if proxy_url else None
+        if parsed is None:
+            server = ""
+            username = ""
+            has_password = False
+        else:
+            hostname = parsed.hostname or ""
+            if ":" in hostname:
+                hostname = f"[{hostname}]"
+            default_port = 443 if parsed.scheme == "https" else 80
+            port = f":{parsed.port}" if parsed.port and parsed.port != default_port else ""
+            server = f"{parsed.scheme}://{hostname}{port}"
+            username = unquote(parsed.username or "")
+            has_password = parsed.password is not None
+        return {
+            "ok": True,
+            "server": server,
+            "username": username,
+            "has_password": has_password,
+        }
+
+    @router.get("/api/config/browser-proxy")
+    async def browser_proxy(request: Request) -> JSONResponse:
+        account_from_request(request)
+        return JSONResponse(_browser_proxy_body())
+
+    @router.put("/api/config/browser-proxy")
+    async def update_browser_proxy(request: Request, payload: dict) -> JSONResponse:
+        account_from_request(request)
+
+        server = payload.get("server", "")
+        username = payload.get("username", "")
+        password = payload.get("password", "")
+        if not isinstance(server, str) or not isinstance(username, str) or not isinstance(password, str):
+            return JSONResponse({"ok": False, "error": "代理配置字段无效"}, status_code=400)
+        server = server.strip()
+        username = username.strip()
+        if len(server) > 2048 or len(username) > 256 or len(password) > 1024:
+            return JSONResponse({"ok": False, "error": "代理配置超出长度限制"}, status_code=400)
+
+        next_proxy_url = ""
+        if server:
+            try:
+                parsed = urlsplit(server)
+                if parsed.username is not None or parsed.password is not None:
+                    raise ValueError
+                validated_server = validate_upstream_proxy_url(server)
+                parsed = urlsplit(validated_server)
+                current = urlsplit(crew.config.browser.upstream_proxy_url)
+                effective_password = password
+                if (
+                    not effective_password
+                    and current.username is not None
+                    and unquote(current.username) == username
+                    and current.password is not None
+                ):
+                    effective_password = unquote(current.password)
+                host = parsed.hostname or ""
+                if ":" in host:
+                    host = f"[{host}]"
+                port = f":{parsed.port}" if parsed.port else ""
+                auth = ""
+                if username:
+                    auth = quote(username, safe="")
+                    if effective_password:
+                        auth += f":{quote(effective_password, safe='')}"
+                    auth += "@"
+                next_proxy_url = validate_upstream_proxy_url(
+                    urlunsplit((parsed.scheme, f"{auth}{host}{port}", "", "", ""))
+                )
+            except ValueError:
+                return JSONResponse(
+                    {"ok": False, "error": "请输入有效的 HTTP/HTTPS 代理地址，不要在地址中填写用户名密码"},
+                    status_code=400,
+                )
+
+        previous = crew.config.browser.upstream_proxy_url
+        manager = getattr(crew, "browser_manager", None)
+        try:
+            if manager is not None:
+                await manager.update_upstream_proxy(next_proxy_url)
+            crew.config.browser.upstream_proxy_url = next_proxy_url
+            crew.config.persist_browser_config()
+        except (RuntimeError, OSError, ValueError) as exc:
+            crew.config.browser.upstream_proxy_url = previous
+            if manager is not None:
+                await manager.update_upstream_proxy(previous)
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+        return JSONResponse(_browser_proxy_body())
 
     @router.post("/api/config/model")
     async def switch_model(request: Request, payload: dict) -> JSONResponse:

@@ -38,6 +38,7 @@ class BrowserConfig:
     # LoopbackPolicyProxy 的实际 DNS/连接路径，不是只做展示的配置项。
     allowed_private_hosts: list[str] = field(default_factory=list)
     allowed_private_cidrs: list[str] = field(default_factory=list)
+    upstream_proxy_url: str = ""
 
     @classmethod
     def from_raw(cls, raw: Any) -> "BrowserConfig":
@@ -65,6 +66,8 @@ class BrowserConfig:
         for name in ("enabled", "headed"):
             if name in values:
                 values[name] = bool(values[name])
+        if "upstream_proxy_url" in values:
+            values["upstream_proxy_url"] = str(values["upstream_proxy_url"] or "").strip()
         return cls(**values)
 
     def public_dict(self) -> dict[str, Any]:
