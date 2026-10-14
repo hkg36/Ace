@@ -3,7 +3,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { backendApi } from '../../src/ui/backend-client';
-import { renderConfigModels } from '../../src/ui/features/config-panes';
+import { bindModelConfigModal, renderConfigModels } from '../../src/ui/features/config-panes';
 import { __resetAllStoresForTest, configStore } from '../../src/ui/stores/stores';
 
 const models = [
@@ -15,8 +15,7 @@ beforeEach(() => {
   vi.restoreAllMocks();
   __resetAllStoresForTest();
   document.body.innerHTML = `
-    <div id="cfg-model-list"></div>
-    <span id="cfg-stat-active"></span>
+    <section id="settings-pane-model"></section>
   `;
   configStore.set({
     config: {
@@ -40,14 +39,36 @@ describe('设置页默认模型切换', () => {
     });
 
     await renderConfigModels();
-    expect(document.getElementById('cfg-stat-active')?.textContent).toBe('Craft');
+    expect(document.querySelector<HTMLButtonElement>('[data-integration-id="craft"] [data-integration-action="set-default"]')?.disabled).toBe(true);
 
-    document.querySelector<HTMLButtonElement>('[data-model-activate="deepseek"]')?.click();
+    document.querySelector<HTMLButtonElement>('[data-integration-id="deepseek"] [data-integration-action="set-default"]')?.click();
 
     await vi.waitFor(() => {
       expect(switchSpy).toHaveBeenCalledWith('deepseek');
-      expect(document.getElementById('cfg-stat-active')?.textContent).toBe('DeepSeek');
-      expect(document.querySelector<HTMLButtonElement>('[data-model-activate="deepseek"]')?.disabled).toBe(true);
+      expect(document.querySelector<HTMLButtonElement>('[data-integration-id="deepseek"] [data-integration-action="set-default"]')?.disabled).toBe(true);
+      expect(document.querySelector<HTMLButtonElement>('[data-integration-id="craft"] [data-integration-action="set-default"]')?.disabled).toBe(false);
     });
+  });
+});
+
+describe('新增模型对话框', () => {
+  it('点击遮罩不会关闭，点击取消才会关闭', () => {
+    document.body.innerHTML = `
+      <div id="model-connect-overlay">
+        <form id="cfg-model-form"></form>
+        <button type="button" id="model-connect-close"></button>
+        <button type="button" id="model-connect-cancel"></button>
+        <button type="button" id="cfg-model-add"></button>
+        <button type="button" id="cfg-model-delete"></button>
+      </div>
+    `;
+    bindModelConfigModal();
+    const overlay = document.getElementById('model-connect-overlay')!;
+
+    overlay.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(overlay.hidden).toBe(false);
+
+    document.getElementById('model-connect-cancel')?.click();
+    expect(overlay.hidden).toBe(true);
   });
 });

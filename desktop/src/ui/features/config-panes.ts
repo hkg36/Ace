@@ -74,7 +74,9 @@ function ensureModelIntegrationView(): SettingsIntegrationView | null {
           .find((candidate) => candidate.id === id);
         if (model && !model.builtin) openModelConfigModal(model);
       },
-      onAction: () => undefined,
+      onAction: (action, id) => {
+        if (action === 'set-default') void setDefaultModel(id);
+      },
     });
   }
   if (!pane.contains(modelIntegrationView.element)) pane.replaceChildren(modelIntegrationView.element);
@@ -335,6 +337,19 @@ function closeModelConfigModal(): void {
   if (overlay) overlay.hidden = true;
 }
 
+async function setDefaultModel(modelId: string): Promise<void> {
+  const model = (state.config?.model_profiles ?? state.config?.models ?? [])
+    .find((candidate) => candidate.id === modelId);
+  if (!model) return;
+  try {
+    state.config = await backendApi.switchModel(modelId);
+    await renderConfigModels();
+    notify(`已将 ${model.name || model.id} 设为默认模型`);
+  } catch (error) {
+    notify(`设置默认模型失败：${(error as Error).message}`);
+  }
+}
+
 /** 打开模型配置弹层（新增或编辑）。内置模型不允许打开。 */
 export function openModelConfigModal(model?: ModelOption): void {
   if (model?.builtin) return;
@@ -419,9 +434,7 @@ function bindModelFormOnce(): void {
 export function bindModelConfigModal(): void {
   bindModelFormOnce();
   document.getElementById('model-connect-close')?.addEventListener('click', closeModelConfigModal);
-  document.getElementById('model-connect-overlay')?.addEventListener('click', (e) => {
-    if (e.target === e.currentTarget) closeModelConfigModal();
-  });
+  document.getElementById('model-connect-cancel')?.addEventListener('click', closeModelConfigModal);
   document.getElementById('cfg-model-add')?.addEventListener('click', () => openModelConfigModal());
   document.getElementById('cfg-model-delete')?.addEventListener('click', async () => {
     const id = (document.getElementById('cfg-model-id') as HTMLInputElement | null)?.value.trim() || '';
@@ -496,6 +509,11 @@ export async function renderConfigModels(): Promise<void> {
       selectable: !model.builtin,
       icon: 'process-thinking',
       active,
+      actions: [{
+        id: 'set-default',
+        label: '设为默认',
+        disabled: active,
+      }],
     };
   });
   view.update({ state: 'ready', message: '', items });
