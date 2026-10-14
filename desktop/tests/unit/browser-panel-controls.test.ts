@@ -249,10 +249,51 @@ describe('browser panel control recovery', () => {
     expect(document.querySelector<HTMLButtonElement>('[data-browser-action="back"]')?.disabled).toBe(true);
     expect(document.querySelector<HTMLButtonElement>('[data-browser-action="forward"]')?.disabled).toBe(true);
     expect(document.querySelector<HTMLButtonElement>('[data-browser-action="reload"]')?.disabled).toBe(true);
+    expect(document.querySelector<HTMLButtonElement>('[data-browser-return-control]')?.hidden).toBe(true);
     expect(document.querySelector('[data-browser-mode]')).toBeNull();
     expect(document.querySelector('[data-browser-control]')).toBeNull();
     expect(document.querySelector('[data-browser-debug]')).toBeNull();
     expect(document.querySelector('[data-browser-clear-data]')).toBeNull();
+  });
+
+  it('returns browser control to AI from the title bar', async () => {
+    const human = pageState({
+      tab_id: 'human-tab',
+      tab_label: 'session-human-tab',
+      url: 'https://example.com/',
+      title: 'Example',
+      mode: 'human',
+      running: true,
+      tabs: [{ id: 'human-tab', label: 'session-human-tab', url: 'https://example.com/', title: 'Example' }],
+    });
+    const ai = pageState({ ...human, mode: 'ai' });
+    Object.defineProperty(window, 'Crew', {
+      configurable: true,
+      value: {
+        browserWsConnect: vi.fn().mockResolvedValue({ ok: true }),
+        browserWsClose: vi.fn().mockResolvedValue({ ok: true }),
+        browserViewHide: vi.fn().mockResolvedValue({ ok: true }),
+        onBrowserWsEvent: vi.fn(() => () => undefined),
+        onBrowserViewLayoutInvalidated: vi.fn(() => () => undefined),
+      },
+    });
+    vi.stubGlobal('ResizeObserver', class { observe(): void {} disconnect(): void {} });
+    vi.spyOn(backendApi, 'browserState').mockResolvedValue({ ok: true, state: human });
+    const control = vi.spyOn(backendApi, 'browserControl')
+      .mockResolvedValue({ ok: true, state: ai });
+    setActiveSessionId('session-return-control');
+    document.body.innerHTML = renderBrowserPanel();
+
+    bindBrowserPanel();
+    const returnButton = document.querySelector<HTMLButtonElement>('[data-browser-return-control]');
+    await vi.waitFor(() => expect(returnButton?.hidden).toBe(false));
+
+    expect(returnButton?.textContent).toBe('交还控制权');
+    expect(returnButton?.title).toBe('点这里交还控制权让AI继续操作');
+    returnButton?.click();
+
+    await vi.waitFor(() => expect(control).toHaveBeenCalledWith('session-return-control', 'return', ''));
+    await vi.waitFor(() => expect(returnButton?.hidden).toBe(true));
   });
 
   it('keeps AI-owned tabs and available history controls actionable for the user', async () => {

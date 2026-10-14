@@ -73,6 +73,14 @@ export function createBrowserInspector(
 
   const tabBar = document.createElement('div');
   tabBar.className = 'browser-tabbar';
+  const returnControl = document.createElement('button');
+  returnControl.type = 'button';
+  returnControl.className = 'browser-return-control';
+  returnControl.dataset.browserReturnControl = '';
+  returnControl.title = '点这里交还控制权让AI继续操作';
+  returnControl.setAttribute('aria-label', returnControl.title);
+  returnControl.textContent = '交还控制权';
+  returnControl.hidden = value.mode !== 'human';
   const strip = document.createElement('div');
   strip.className = 'browser-tab-strip';
   strip.dataset.browserTabStrip = '';
@@ -90,7 +98,7 @@ export function createBrowserInspector(
   maximize.setAttribute('aria-pressed', String(options.maximized));
   const close = iconButton('关闭浏览器面板', 'icon-close', 'browser-chrome-btn');
   close.dataset.browserShell = 'close';
-  tabBar.append(strip, add, maximize, close);
+  tabBar.append(returnControl, strip, add, maximize, close);
 
   const toolbar = document.createElement('div');
   toolbar.className = 'browser-toolbar';

@@ -471,6 +471,9 @@ export function bindBrowserPanel(): void {
   document.querySelectorAll<HTMLButtonElement>('[data-browser-action]').forEach((button) => {
     button.addEventListener('click', () => void sendHumanControl(button.dataset.browserAction || ''));
   });
+  document.querySelector<HTMLButtonElement>('[data-browser-return-control]')?.addEventListener('click', () => {
+    void sendControl('return');
+  });
   document.querySelectorAll<HTMLButtonElement>('[data-browser-takeover-action]').forEach((button) => {
     button.addEventListener('click', () => {
       const confirmed = button.dataset.browserTakeoverAction === 'confirm';
@@ -1406,6 +1409,8 @@ function patchChrome(): void {
     );
   }
   document.querySelector<HTMLElement>('[data-browser-stage]')?.classList.toggle('is-interactive', value.mode === 'human');
+  const returnControl = document.querySelector<HTMLButtonElement>('[data-browser-return-control]');
+  if (returnControl) returnControl.hidden = value.mode !== 'human';
   renderTakeoverPrompt();
   renderLoadFailure();
   const empty = document.querySelector<HTMLElement>('[data-browser-empty]');

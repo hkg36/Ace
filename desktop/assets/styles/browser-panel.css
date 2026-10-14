@@ -86,6 +86,26 @@ body.browser-workbench-maximized #chat-inspector {
   background: var(--mw-bg-subtle);
 }
 
+.browser-return-control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  min-height: 29px;
+  padding: 0 var(--mw-space-2);
+  border: 1px solid var(--mw-border-subtle);
+  border-radius: var(--mw-radius-3);
+  background: var(--mw-bg-surface);
+  color: var(--mw-action-primary);
+  font: inherit;
+  font-size: var(--mw-type-caption-size);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.browser-return-control:hover { background: var(--mw-bg-selected); }
+.browser-return-control:focus-visible { outline: 2px solid var(--mw-action-primary); outline-offset: 2px; }
+.browser-return-control[hidden] { display: none; }
+
 .browser-tab-strip {
   display: flex;
   align-items: center;
