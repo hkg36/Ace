@@ -438,6 +438,11 @@ function bindRecordingControls(): void {
       closeRecordingNoteComposer();
     }
   });
+  // 聚焦模型对话输入框时自动交还控制权，让 AI 可继续操作。
+  document.addEventListener('focusin', (event) => {
+    if (!(event.target as HTMLElement | null)?.closest?.('[data-composer-input]')) return;
+    releaseUserBrowserControl();
+  });
   document.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape') return;
     if (!(event.target as HTMLElement | null)?.closest?.('[data-browser-note]')) return;
