@@ -498,6 +498,7 @@ export async function renderConfigModels(): Promise<void> {
   }
   const items: SettingsIntegrationItem[] = models.map((model) => {
     const active = model.id === state.config!.active_model_id;
+    const isPlaceholder = model.id === 'default';
     return {
       id: model.id,
       title: model.name || model.id,
@@ -509,10 +510,9 @@ export async function renderConfigModels(): Promise<void> {
       selectable: !model.builtin,
       icon: 'process-thinking',
       active,
-      actions: [{
+      actions: active || isPlaceholder ? [] : [{
         id: 'set-default',
         label: '设为默认',
-        disabled: active,
       }],
     };
   });

@@ -7,6 +7,7 @@ import { bindModelConfigModal, renderConfigModels } from '../../src/ui/features/
 import { __resetAllStoresForTest, configStore } from '../../src/ui/stores/stores';
 
 const models = [
+  { id: 'default', name: 'default', model: 'your-model-name', has_key: true, loaded: true },
   { id: 'craft', name: 'Craft', model: 'craft', has_key: true, loaded: true },
   { id: 'deepseek', name: 'DeepSeek', model: 'deepseek-chat', has_key: true, loaded: true },
 ];
@@ -39,13 +40,14 @@ describe('设置页默认模型切换', () => {
     });
 
     await renderConfigModels();
-    expect(document.querySelector<HTMLButtonElement>('[data-integration-id="craft"] [data-integration-action="set-default"]')?.disabled).toBe(true);
+    expect(document.querySelector('[data-integration-id="default"] [data-integration-action="set-default"]')).toBeNull();
+    expect(document.querySelector('[data-integration-id="craft"] [data-integration-action="set-default"]')).toBeNull();
 
     document.querySelector<HTMLButtonElement>('[data-integration-id="deepseek"] [data-integration-action="set-default"]')?.click();
 
     await vi.waitFor(() => {
       expect(switchSpy).toHaveBeenCalledWith('deepseek');
-      expect(document.querySelector<HTMLButtonElement>('[data-integration-id="deepseek"] [data-integration-action="set-default"]')?.disabled).toBe(true);
+      expect(document.querySelector('[data-integration-id="deepseek"] [data-integration-action="set-default"]')).toBeNull();
       expect(document.querySelector<HTMLButtonElement>('[data-integration-id="craft"] [data-integration-action="set-default"]')?.disabled).toBe(false);
     });
   });
