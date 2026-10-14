@@ -82,7 +82,7 @@
 .mw-shell-template__rail {
   min-width: 0;
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
   border-right: 1px solid var(--mw-border-subtle);
   background: var(--mw-bg-sidebar);
 }

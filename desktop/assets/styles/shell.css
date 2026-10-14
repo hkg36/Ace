@@ -252,6 +252,7 @@
 }
 
 .mw-app-account {
+  position: relative;
   min-width: 0;
 }
 
@@ -310,6 +311,110 @@
   text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.mw-app-account__menu {
+  position: absolute;
+  z-index: var(--mw-z-popover);
+  bottom: 0;
+  left: calc(100% + var(--mw-space-2));
+  display: grid;
+  width: 264px;
+  max-height: min(420px, 70vh);
+  gap: var(--mw-space-1);
+  overflow: auto;
+  padding: var(--mw-space-2);
+  border: 1px solid var(--mw-border-default);
+  border-radius: var(--mw-radius-3);
+  background: var(--mw-bg-surface);
+  box-shadow: var(--mw-shadow-overlay);
+}
+
+.mw-app-account__menu[hidden] {
+  display: none;
+}
+
+.mw-app-account__menu-title {
+  padding: var(--mw-space-2) var(--mw-space-3);
+  color: var(--mw-text-muted);
+  font-size: var(--mw-type-caption-size);
+}
+
+.mw-app-account__menu-item {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--mw-space-2);
+  padding: var(--mw-space-2) var(--mw-space-3);
+  border: 0;
+  border-radius: var(--mw-radius-2);
+  background: transparent;
+  color: var(--mw-text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mw-app-account__menu-item:hover,
+.mw-app-account__menu-item[aria-current='true'] {
+  background: var(--mw-bg-subtle);
+}
+
+.mw-app-account__menu-avatar {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid var(--mw-border-default);
+  border-radius: var(--mw-radius-full);
+  background: var(--mw-bg-app);
+  font-size: var(--mw-type-caption-size);
+}
+
+.mw-app-account__menu-copy {
+  min-width: 0;
+}
+
+.mw-app-account__menu-name,
+.mw-app-account__menu-contact {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mw-app-account__menu-name {
+  font-size: var(--mw-type-label-size);
+}
+
+.mw-app-account__menu-contact,
+.mw-app-account__menu-current {
+  color: var(--mw-text-muted);
+  font-size: var(--mw-type-caption-size);
+}
+
+.mw-app-account__menu-footer {
+  margin-top: var(--mw-space-1);
+  padding-top: var(--mw-space-1);
+  border-top: 1px solid var(--mw-border-subtle);
+}
+
+.mw-app-account__menu-settings {
+  width: 100%;
+  padding: var(--mw-space-2) var(--mw-space-3);
+  border: 0;
+  border-radius: var(--mw-radius-2);
+  background: transparent;
+  color: var(--mw-text-secondary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mw-app-account__menu-settings:hover {
+  background: var(--mw-bg-subtle);
+  color: var(--mw-text-primary);
 }
 
 .mw-app-command__progress {

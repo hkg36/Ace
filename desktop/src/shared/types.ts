@@ -65,6 +65,15 @@ export interface AuthStateSnapshot {
   user: AuthUserSnapshot | null;
 }
 
+export interface AuthAccountSnapshot {
+  accountId: string;
+  providerId: string;
+  user: AuthUserSnapshot;
+  isCurrent: boolean;
+  lastUsedAt: number;
+  canSwitch: boolean;
+}
+
 /** 版本更新推送载荷（主进程 → renderer，经 preload onVersionUpdate）。 */
 export interface VersionUpdatePayload {
   type: 'force' | 'reminder';

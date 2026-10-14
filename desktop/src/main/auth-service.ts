@@ -11,7 +11,7 @@
  * 真正的鉴权由 `gatewayIdentityHeaders()` 返回的 `Cookie` 头完成。远程已登录时
  * 二者同时非空，旧代码里 `if (!jwt || !identityHeaders) return 401` 的判断仍然成立。
  */
-import type { AuthStateSnapshot, AuthUserSnapshot, VersionUpdatePayload } from '../shared/types';
+import type { AuthAccountSnapshot, AuthStateSnapshot, AuthUserSnapshot, VersionUpdatePayload } from '../shared/types';
 import { desktopAuthSession } from './auth-session';
 
 export type VersionUpdateCallback = (payload: VersionUpdatePayload) => void;
@@ -67,6 +67,22 @@ export class LoginNewService {
 
   async logout(baseUrl: string): Promise<Record<string, unknown>> {
     return desktopAuthSession.logout(baseUrl);
+  }
+
+  async logoutAccount(baseUrl: string, accountId: string): Promise<Record<string, unknown>> {
+    return desktopAuthSession.logoutAccount(baseUrl, accountId);
+  }
+
+  listAccounts(): AuthAccountSnapshot[] {
+    return desktopAuthSession.listAccounts();
+  }
+
+  switchAccount(accountId: string): { ok: true } | { ok: false; error: string } {
+    return desktopAuthSession.switchAccount(accountId);
+  }
+
+  deleteAccountRecord(accountId: string): boolean {
+    return desktopAuthSession.deleteAccountRecord(accountId);
   }
 
   // -- 生命周期钩子（保留签名供主进程调用；行为为空，真正逻辑在 IPC handler 侧）--

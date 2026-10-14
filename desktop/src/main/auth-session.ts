@@ -1,11 +1,13 @@
 /** Provider-neutral authentication state owned by the Electron main process. */
 
 import { safeStorage } from 'electron';
-import type { AuthStateSnapshot, AuthUserSnapshot } from '../shared/types';
+import type { AuthAccountSnapshot, AuthStateSnapshot, AuthUserSnapshot } from '../shared/types';
 import { readDesktopPrefsFile, writeDesktopPrefsFile } from './desktop-prefs';
 
 const SESSION_COOKIE_NAME = 'crew_auth_session';
-const PREFS_KEY = 'authSession';
+const ACCOUNTS_KEY = 'authAccounts';
+const ACTIVE_ACCOUNT_KEY = 'activeAuthAccountId';
+const LEGACY_SESSION_KEY = 'authSession';
 
 interface AuthConfigPayload {
   ok?: boolean;
@@ -18,6 +20,7 @@ interface StoredAuthSession {
   providerId?: string;
   encryptedCookie?: string;
   user?: AuthUserSnapshot;
+  lastUsedAt?: number;
 }
 
 function parseJson(text: string): Record<string, unknown> {
@@ -63,6 +66,7 @@ export class DesktopAuthSession {
   private providerId = 'custom';
   private cookie = '';
   private user: AuthUserSnapshot | null = null;
+  private activeAccountId = '';
 
   private endpoint(baseUrl: string, pathname: string): string {
     const target = new URL(baseUrl);
@@ -134,6 +138,82 @@ export class DesktopAuthSession {
     return this.user ? `${this.providerId}:${this.user.userId}` : null;
   }
 
+  listAccounts(): AuthAccountSnapshot[] {
+    const accounts = this.readStoredAccounts();
+    const currentId = this.currentAccountId();
+    const snapshots = accounts.flatMap((account) => {
+      const user = normalizedUser(account.user);
+      if (!user || !account.providerId) return [];
+      const accountId = this.accountId(account.providerId, user);
+      return [{
+        accountId,
+        providerId: account.providerId,
+        user,
+        isCurrent: accountId === currentId,
+        lastUsedAt: account.lastUsedAt || 0,
+        canSwitch: Boolean(account.encryptedCookie && safeStorage.isEncryptionAvailable()),
+      }];
+    });
+    if (this.user && (this.mode === 'remote' || this.mode === 'email') && !snapshots.some((item) => item.accountId === currentId)) {
+      snapshots.unshift({
+        accountId: currentId,
+        providerId: this.providerId,
+        user: this.user,
+        isCurrent: true,
+        lastUsedAt: Date.now(),
+        canSwitch: false,
+      });
+    }
+    return snapshots.sort((left, right) => Number(right.isCurrent) - Number(left.isCurrent) || right.lastUsedAt - left.lastUsedAt);
+  }
+
+  switchAccount(accountId: string): { ok: true } | { ok: false; error: string } {
+    const account = this.readStoredAccounts().find(
+      (item) => item.user && this.accountId(item.providerId || '', item.user) === accountId,
+    );
+    if (!account || account.providerId !== this.providerId) {
+      return { ok: false, error: '找不到此登录用户，或该用户不属于当前认证服务。' };
+    }
+    if (!account.encryptedCookie || !safeStorage.isEncryptionAvailable()) {
+      return { ok: false, error: '此用户的登录凭据不可用，请重新登录。' };
+    }
+    try {
+      const cookie = safeStorage.decryptString(Buffer.from(account.encryptedCookie, 'base64'));
+      if (!cookie.startsWith(`${SESSION_COOKIE_NAME}=`)) {
+        return { ok: false, error: '此用户的登录凭据无效，请重新登录。' };
+      }
+      this.cookie = cookie;
+      this.user = account.user || null;
+      this.activeAccountId = accountId;
+      this.touchStoredAccount(accountId);
+      return { ok: true };
+    } catch (error) {
+      return {
+        ok: false,
+        error: `无法读取此用户的登录凭据：${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
+  }
+
+  deleteAccountRecord(accountId: string): boolean {
+    const prefs = readDesktopPrefsFile();
+    const accounts = this.readStoredAccounts(prefs);
+    const remaining = accounts.filter(
+      (item) => !item.user || this.accountId(item.providerId || '', item.user) !== accountId,
+    );
+    if (remaining.length === accounts.length) return false;
+    prefs[ACCOUNTS_KEY] = remaining;
+    delete prefs[LEGACY_SESSION_KEY];
+    if (prefs[ACTIVE_ACCOUNT_KEY] === accountId) delete prefs[ACTIVE_ACCOUNT_KEY];
+    writeDesktopPrefsFile(prefs);
+    if (this.activeAccountId === accountId) {
+      this.activeAccountId = '';
+      this.cookie = '';
+      this.user = null;
+    }
+    return true;
+  }
+
   cookieHeader(): string {
     return this.mode === 'remote' || this.mode === 'email' ? this.cookie : '';
   }
@@ -142,10 +222,15 @@ export class DesktopAuthSession {
     this.cookie = '';
     this.user = null;
     const prefs = readDesktopPrefsFile();
-    const stored = prefs[PREFS_KEY] as StoredAuthSession | undefined;
-    if (!stored || stored.providerId !== this.providerId || !stored.encryptedCookie) return;
-    const user = normalizedUser(stored.user);
-    if (!user || !safeStorage.isEncryptionAvailable()) return;
+    const accounts = this.readStoredAccounts(prefs);
+    const activeId = typeof prefs[ACTIVE_ACCOUNT_KEY] === 'string' ? prefs[ACTIVE_ACCOUNT_KEY] : '';
+    const stored = accounts.find(
+      (item) => item.providerId === this.providerId && item.user
+        && this.accountId(item.providerId || '', item.user) === activeId,
+    ) || accounts.find((item) => item.providerId === this.providerId && item.user);
+    const user = normalizedUser(stored?.user);
+    this.activeAccountId = stored && user ? this.accountId(this.providerId, user) : '';
+    if (!stored?.encryptedCookie || !user || !safeStorage.isEncryptionAvailable()) return;
     try {
       const cookie = safeStorage.decryptString(Buffer.from(stored.encryptedCookie, 'base64'));
       if (!cookie.startsWith(`${SESSION_COOKIE_NAME}=`)) return;
@@ -157,24 +242,91 @@ export class DesktopAuthSession {
   }
 
   private persistRemoteSession(): void {
-    if (!this.cookie || !this.user || !safeStorage.isEncryptionAvailable()) return;
+    if (!this.cookie || !this.user) return;
     const prefs = readDesktopPrefsFile();
-    const encryptedCookie = safeStorage.encryptString(this.cookie).toString('base64');
+    const accounts = this.readStoredAccounts(prefs);
+    const accountId = this.accountId(this.providerId, this.user);
+    const encryptedCookie = safeStorage.isEncryptionAvailable()
+      ? safeStorage.encryptString(this.cookie).toString('base64')
+      : undefined;
+    const stored: StoredAuthSession = {
+      providerId: this.providerId,
+      ...(encryptedCookie ? { encryptedCookie } : {}),
+      user: this.user,
+      lastUsedAt: Date.now(),
+    };
+    const nextAccounts = [
+      stored,
+      ...accounts.filter((item) => !item.user || this.accountId(item.providerId || '', item.user) !== accountId),
+    ];
+    this.activeAccountId = accountId;
+    delete prefs[LEGACY_SESSION_KEY];
     writeDesktopPrefsFile({
       ...prefs,
-      [PREFS_KEY]: {
-        providerId: this.providerId,
-        encryptedCookie,
-        user: this.user,
-      } satisfies StoredAuthSession,
+      [ACCOUNTS_KEY]: nextAccounts,
+      [ACTIVE_ACCOUNT_KEY]: accountId,
     });
   }
 
   private clearPersistedSession(): void {
     const prefs = readDesktopPrefsFile();
-    if (!(PREFS_KEY in prefs)) return;
-    delete prefs[PREFS_KEY];
+    const accountId = this.activeAccountId || this.currentAccountId();
+    const accounts = this.readStoredAccounts(prefs).map((account) => {
+      if (!account.user || this.accountId(account.providerId || '', account.user) !== accountId) return account;
+      const { encryptedCookie: _encryptedCookie, ...withoutCookie } = account;
+      return withoutCookie;
+    });
+    prefs[ACCOUNTS_KEY] = accounts;
+    delete prefs[LEGACY_SESSION_KEY];
+    delete prefs[ACTIVE_ACCOUNT_KEY];
     writeDesktopPrefsFile(prefs);
+    this.activeAccountId = '';
+  }
+
+  private readStoredAccounts(prefs = readDesktopPrefsFile()): StoredAuthSession[] {
+    const raw = prefs[ACCOUNTS_KEY];
+    const accounts: StoredAuthSession[] = [];
+    if (Array.isArray(raw)) {
+      for (const item of raw) {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+        const record = item as StoredAuthSession;
+        const user = normalizedUser(record.user);
+        if (!user || typeof record.providerId !== 'string') continue;
+        accounts.push({
+          providerId: record.providerId,
+          ...(typeof record.encryptedCookie === 'string' ? { encryptedCookie: record.encryptedCookie } : {}),
+          user,
+          ...(typeof record.lastUsedAt === 'number' && Number.isFinite(record.lastUsedAt)
+            ? { lastUsedAt: record.lastUsedAt }
+            : {}),
+        });
+      }
+    }
+    if (accounts.length > 0) return accounts;
+    const legacy = prefs[LEGACY_SESSION_KEY] as StoredAuthSession | undefined;
+    return legacy?.providerId && normalizedUser(legacy.user) ? [legacy] : [];
+  }
+
+  private accountId(providerId: string, user: AuthUserSnapshot): string {
+    return `${providerId}:${user.userId}`;
+  }
+
+  private currentAccountId(): string {
+    return this.activeAccountId || (this.user ? this.accountId(this.providerId, this.user) : '');
+  }
+
+  private touchStoredAccount(accountId: string): void {
+    const prefs = readDesktopPrefsFile();
+    const accounts = this.readStoredAccounts(prefs).map((account) => {
+      if (!account.user || this.accountId(account.providerId || '', account.user) !== accountId) return account;
+      return { ...account, lastUsedAt: Date.now() };
+    });
+    delete prefs[LEGACY_SESSION_KEY];
+    writeDesktopPrefsFile({
+      ...prefs,
+      [ACCOUNTS_KEY]: accounts,
+      [ACTIVE_ACCOUNT_KEY]: accountId,
+    });
   }
 
   async sendCode(baseUrl: string, phoneNumber: string): Promise<Record<string, unknown>> {
@@ -253,6 +405,41 @@ export class DesktopAuthSession {
     this.cookie = '';
     this.user = null;
     this.clearPersistedSession();
+    return { ...payload, ok: true, status: response.status };
+  }
+
+  async logoutAccount(baseUrl: string, accountId: string): Promise<Record<string, unknown>> {
+    const account = this.readStoredAccounts().find(
+      (item) => item.user && this.accountId(item.providerId || '', item.user) === accountId,
+    );
+    if (!account) return { ok: false, error: '找不到此登录用户记录。' };
+    if (!account.encryptedCookie) return { ok: true, released: true };
+    if (!safeStorage.isEncryptionAvailable()) {
+      return { ok: false, error: '当前系统无法解密此用户的登录凭据。' };
+    }
+
+    let cookie: string;
+    try {
+      cookie = safeStorage.decryptString(Buffer.from(account.encryptedCookie, 'base64'));
+    } catch (error) {
+      return {
+        ok: false,
+        error: `无法读取此用户的登录凭据：${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
+    if (!cookie.startsWith(`${SESSION_COOKIE_NAME}=`)) {
+      return { ok: false, error: '此用户的登录凭据无效。' };
+    }
+
+    const response = await fetch(this.endpoint(baseUrl, '/api/auth/logout'), {
+      method: 'POST',
+      headers: { Cookie: cookie },
+      redirect: 'error',
+    });
+    const payload = parseJson(await response.text());
+    if (!response.ok || payload.ok !== true) {
+      return { ...payload, ok: false, status: response.status };
+    }
     return { ...payload, ok: true, status: response.status };
   }
 }

@@ -3,6 +3,7 @@
  */
 import { contextBridge, ipcRenderer } from 'electron';
 import type {
+  AuthAccountSnapshot,
   AuthStateSnapshot,
   UpdateStateSnapshot,
   VersionUpdateDownloadProgressPayload,
@@ -94,11 +95,17 @@ const api = {
   heartbeat: (version?: string) => ipcRenderer.invoke('auth:heartbeat', version),
   authGetState: () =>
     ipcRenderer.invoke('auth:get-state') as Promise<{ ok: boolean; state: AuthStateSnapshot; error?: string }>,
+  authListAccounts: () =>
+    ipcRenderer.invoke('auth:list-accounts') as Promise<AuthAccountSnapshot[]>,
   authSendCode: (phoneNumber: string) =>
     ipcRenderer.invoke('auth:send-code', { phoneNumber }) as Promise<Record<string, unknown>>,
   authLogin: (identifier: string, code = '') =>
     ipcRenderer.invoke('auth:login', { identifier, code }) as Promise<Record<string, unknown>>,
   authLogout: () => ipcRenderer.invoke('auth:logout') as Promise<Record<string, unknown>>,
+  authSwitchAccount: (accountId: string) =>
+    ipcRenderer.invoke('auth:switch-account', { accountId }) as Promise<Record<string, unknown>>,
+  authDeleteAccount: (accountId: string) =>
+    ipcRenderer.invoke('auth:delete-account', { accountId }) as Promise<Record<string, unknown>>,
 
   // 反馈
   submitFeedback: (payload: { title: string; description: string; images?: Array<{ name: string; dataUrl: string }> }) =>

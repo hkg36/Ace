@@ -19,6 +19,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
 import WebSocket from 'ws';
 import { BrowserHost, BrowserHostError } from './browser-host';
 import { loginNewServiceInstance } from './auth-service';
+import { removeAccountDataDirectory } from './account-data';
 import { submitFeedback, getFeedbackList, getFeedbackImage } from './feedback-service';
 import {
   readResolvedCrewFile,
@@ -2909,6 +2910,67 @@ function registerIpc() {
         state: loginNewServiceInstance.getState(),
       };
     }
+  });
+
+  trustedHandle('auth:list-accounts', async () => loginNewServiceInstance.listAccounts());
+
+  trustedHandle('auth:switch-account', async (_e, raw: unknown) => {
+    const accountId =
+      typeof raw === 'object' && raw !== null
+        ? (raw as Record<string, unknown>).accountId
+        : undefined;
+    if (typeof accountId !== 'string' || !accountId.trim() || accountId.length > 512) {
+      throw new Error(`${IPC_ARG_VALIDATION_FAILED}: auth:switch-account accountId required`);
+    }
+    const result = loginNewServiceInstance.switchAccount(accountId);
+    if (!result.ok) return result;
+    closeGatewaySockets('account-switched');
+    await resetBrowserHost('account-switched');
+    pushSessionState();
+    scheduleBrowserHostConnection();
+    return result;
+  });
+
+  trustedHandle('auth:delete-account', async (_e, raw: unknown) => {
+    const accountId =
+      typeof raw === 'object' && raw !== null
+        ? (raw as Record<string, unknown>).accountId
+        : undefined;
+    if (typeof accountId !== 'string' || !accountId.trim() || accountId.length > 512) {
+      throw new Error(`${IPC_ARG_VALIDATION_FAILED}: auth:delete-account accountId required`);
+    }
+    const account = loginNewServiceInstance.listAccounts().find((item) => item.accountId === accountId);
+    if (!account) return { ok: false, error: '找不到此登录用户记录。' };
+
+    let logoutWarning: string | undefined;
+    try {
+      const { baseUrl } = await ensureGateway();
+      const logout = account.isCurrent
+        ? await loginNewServiceInstance.logout(baseUrl)
+        : await loginNewServiceInstance.logoutAccount(baseUrl, account.accountId);
+      if (logout.ok !== true) {
+        logoutWarning = typeof logout.error === 'string'
+          ? logout.error
+          : '认证服务未确认注销';
+      }
+    } catch (error) {
+      logoutWarning = error instanceof Error ? error.message : String(error);
+    }
+    if (account.isCurrent) {
+      closeGatewaySockets('account-deleted');
+      await resetBrowserHost('account-deleted');
+    }
+    await removeAccountDataDirectory(account.accountId, activeGatewayCrewHome());
+    if (!loginNewServiceInstance.deleteAccountRecord(account.accountId)) {
+      throw new Error('账号数据已删除，但登录记录未能删除，请重试。');
+    }
+    pushSessionState();
+    return {
+      ok: true,
+      ...(logoutWarning
+        ? { warning: `本地账号数据和登录记录已删除，但远程会话注销失败：${logoutWarning}` }
+        : {}),
+    };
   });
 
   trustedHandle('auth:send-code', async (_e, raw: unknown) => {

@@ -142,9 +142,12 @@ function createFixtureBridge(fixture: VisualFixture): Window['Crew'] {
     }),
     rendererInitialStateReady: async () => ({ ok: true as const }),
     authGetState: async () => ({ ok: true, state: authState }),
+    authListAccounts: async () => [],
     authSendCode: async () => ({ ok: false, error: '视觉预览不支持发送验证码' }),
     authLogin: async () => ({ ok: false, error: '视觉预览不支持登录' }),
     authLogout: async () => ({ ok: true }),
+    authSwitchAccount: async () => ({ ok: false, error: '视觉预览不支持切换用户' }),
+    authDeleteAccount: async () => ({ ok: false, error: '视觉预览不支持删除用户' }),
     onBackendStatus: (
       listener: (status: { connected: boolean; components: Record<string, never> }) => void,
     ) => {
