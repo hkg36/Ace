@@ -1941,6 +1941,17 @@ export const backendApi = {
     getJSON<{ ok: boolean }>(`/api/skills/${encodeURIComponent(slug)}/install`, { method: 'POST' }),
   uninstallSkill: (slug: string) =>
     getJSON<{ ok: boolean }>(`/api/skills/${encodeURIComponent(slug)}`, { method: 'DELETE' }),
+  /** 导出技能为 zip（base64）；slug 省略时导出全部用户技能。 */
+  exportSkills: (slug?: string) =>
+    getJSON<{ ok: boolean; filename: string; content: string }>(
+      slug ? `/api/skills/${encodeURIComponent(slug)}/export` : '/api/skills/export',
+    ),
+  /** 导入技能 zip（base64）；技能目录本机全局共享，导入后对所有账号可见。 */
+  importSkills: (content: string, overwrite = false) =>
+    getJSON<{ ok: boolean; installed: string[]; skipped: { slug: string; reason: string }[] }>(
+      '/api/skills/import',
+      { method: 'POST', ...jsonBody({ content, overwrite }) },
+    ),
   /** 从 base64 zip 安装远程技能（Skill Hub）。网关本地解压落盘，不触外网。 */
   installFromZip: (slug: string, content: string, version?: string, hubId?: string) => {
     const body: { slug: string; content: string; version?: string; hub_id?: string } = { slug, content };

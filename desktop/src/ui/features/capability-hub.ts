@@ -49,6 +49,8 @@ export interface CapabilityHubOptions {
   onSearch?: (query: string) => void;
   onCategoryChange?: (category: string) => void;
   onRefresh?: () => void;
+  onImport?: () => void;
+  onExport?: (id: string) => void;
   onOpen?: (id: string) => void;
   onClose?: () => void;
   onAction?: (id: string, action: Exclude<CapabilityAction, 'toggle'>) => void;
@@ -262,6 +264,15 @@ export function createCapabilityHubView(options: CapabilityHubOptions): Capabili
       });
       detailAction.element.dataset.capabilityDetailAction = item.id;
       footer.append(detailAction.element);
+      if (item.kind === 'skill') {
+        const exportButton = createButton({
+          label: '导出 zip',
+          variant: 'outline',
+          onPress: () => options.onExport?.(item.id),
+        });
+        exportButton.element.dataset.capabilityDetailExport = item.id;
+        footer.append(exportButton.element);
+      }
     }
     dialog.append(header, body, footer);
     overlay.append(dialog);
@@ -406,7 +417,9 @@ export function createCapabilityHubView(options: CapabilityHubOptions): Capabili
 
   const render = (): void => {
     const isPlugin = current.tab === 'plugins';
-    tabs.setValue(current.tab);
+    importButton.element.hidden = isPlugin;
+    exportAllButton.element.hidden = isPlugin;
+    tabs.setValue(current.tab);(current.tab);
     title.textContent = isPlugin ? '插件' : '技能市场';
     description.textContent = isPlugin
       ? '统筹扩展插件、Hook 和平台通道，一眼看清账号/策略可用情况。'
@@ -444,6 +457,17 @@ export function createCapabilityHubView(options: CapabilityHubOptions): Capabili
     onPress: () => options.onRefresh?.(),
   });
   actions.append(refresh.element);
+  const importButton = createButton({
+    label: '导入技能',
+    variant: 'secondary',
+    onPress: () => options.onImport?.(),
+  });
+  const exportAllButton = createButton({
+    label: '导出全部',
+    variant: 'secondary',
+    onPress: () => options.onExport?.(''),
+  });
+  actions.append(importButton.element, exportAllButton.element);
   render();
 
   return {
@@ -459,6 +483,8 @@ export function createCapabilityHubView(options: CapabilityHubOptions): Capabili
       overlay.remove();
       tabs.dispose();
       refresh.dispose();
+      importButton.dispose();
+      exportAllButton.dispose();
       searchInput.removeEventListener('input', handleSearch);
     },
   };

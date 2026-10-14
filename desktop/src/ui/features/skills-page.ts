@@ -407,6 +407,8 @@ function renderShell(): void {
       onRefresh: () => {
         void loadStore();
       },
+      onImport: () => void importSkills(),
+      onExport: (id) => void exportSkills(id),
       onOpen: openCapability,
       onClose: () => {
         modalSkill = null;
@@ -447,6 +449,79 @@ async function toggleEvolution(value: boolean): Promise<void> {
   } finally {
     togglingEvolution = false;
     renderShell();
+  }
+}
+
+function pickZipFile(): Promise<File | null> {
+  return new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.zip,application/zip';
+    input.addEventListener('change', () => resolve(input.files?.[0] ?? null), { once: true });
+    input.addEventListener('cancel', () => resolve(null), { once: true });
+    input.click();
+  });
+}
+
+function fileToBase64(file: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error ?? new Error('读取文件失败'));
+    reader.onload = () => {
+      const result = String(reader.result ?? '');
+      resolve(result.slice(result.indexOf(',') + 1));
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+async function importSkills(): Promise<void> {
+  if (installing) {
+    notify('正在处理中，请稍候');
+    return;
+  }
+  const file = await pickZipFile();
+  if (!file) return;
+  installing = true;
+  try {
+    const agreed = await showConfirmDialog({
+      title: '确认全局导入技能',
+      message:
+        `技能是本机全局共享能力，导入结果对本机所有登录账号生效。确定导入「${file.name}」吗？`
+        + '同名技能默认跳过。',
+      confirmText: '全局导入',
+      cancelText: '取消',
+    });
+    if (!agreed) return;
+    const res = await backendApi.importSkills(await fileToBase64(file));
+    const skipped = res.skipped ?? [];
+    const parts = [res.installed.length ? `已导入 ${res.installed.join('、')}` : '没有导入任何技能'];
+    if (skipped.length) parts.push(`跳过：${skipped.map((s) => `${s.slug}（${s.reason}）`).join('；')}`);
+    notify(parts.join('；'));
+    invalidateSkills();
+    await loadStore();
+  } catch (error) {
+    notify((error as Error).message || '导入失败');
+  } finally {
+    installing = false;
+  }
+}
+
+async function exportSkills(slug: string): Promise<void> {
+  try {
+    const res = await backendApi.exportSkills(slug || undefined);
+    const bytes = Uint8Array.from(atob(res.content), (c) => c.charCodeAt(0));
+    const url = URL.createObjectURL(new Blob([bytes], { type: 'application/zip' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = res.filename;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    notify(`已导出 ${res.filename}`);
+  } catch (error) {
+    notify((error as Error).message || '导出失败');
   }
 }
 

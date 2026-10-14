@@ -8,6 +8,12 @@ import base64
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
+from crew.agent.skill_archive import (
+    MAX_ARCHIVE_BYTES,
+    SkillArchiveError,
+    export_skills_zip,
+    import_skills_zip,
+)
 from crew.agent.skills import (
     install_skill,
     list_local_skills,
@@ -214,6 +220,51 @@ def create_misc_router(crew) -> APIRouter:
             return JSONResponse({"ok": False, "error": "skill 不存在或已安装"}, status_code=400)
         return JSONResponse({"ok": True})
 
+    def _export_payload(slugs: list[str] | None) -> JSONResponse:
+        try:
+            data, filename = export_skills_zip(slugs)
+        except SkillArchiveError as exc:
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+        return JSONResponse({
+            "ok": True,
+            "filename": filename,
+            "content": base64.b64encode(data).decode("ascii"),
+        })
+
+    @router.get("/api/skills/export")
+    async def skills_export_all() -> JSONResponse:
+        """导出全部用户技能为 zip（base64，供桌面网关桥传输）。"""
+        return await asyncio.to_thread(_export_payload, None)
+
+    @router.get("/api/skills/{slug}/export")
+    async def skill_export(slug: str) -> JSONResponse:
+        """导出单个技能为 zip（base64）。"""
+        return await asyncio.to_thread(_export_payload, [slug])
+
+    @router.post("/api/skills/import")
+    async def skills_import(request: Request, payload: dict) -> JSONResponse:
+        """导入 zip：body {content: base64, overwrite?: bool}。
+
+        技能目录本机全局共享，导入后对所有登录账号可见。
+        """
+        content = str(payload.get("content") or "")
+        if len(content) > MAX_ARCHIVE_BYTES * 4 // 3 + 16:
+            return JSONResponse({"ok": False, "error": "zip 文件过大"}, status_code=413)
+        try:
+            data = base64.b64decode(content, validate=True)
+        except (ValueError, TypeError):
+            return JSONResponse({"ok": False, "error": "content 不是有效的 base64"}, status_code=400)
+        owner = account_from_request(request).owner_account_id
+        try:
+            result = await asyncio.to_thread(
+                import_skills_zip,
+                data,
+                overwrite=bool(payload.get("overwrite")),
+                operator_account_id=owner,
+            )
+        except SkillArchiveError as exc:
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+        return JSONResponse({"ok": bool(result["installed"]), **result})
     @router.delete("/api/skills/{slug}")
     async def skill_uninstall(slug: str, request: Request) -> JSONResponse:
         owner = account_from_request(request).owner_account_id
