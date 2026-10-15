@@ -460,6 +460,8 @@ function sessionTurnIdentity(sessionId: string | null): AgentTurnOptions['identi
 export interface ConversationRenderHooks {
   /** 面板自己的 sessionId 来源（缺省 = 全局活跃会话）；fold 委托按此解析消息。 */
   getSessionId?: () => string | null;
+  isErrorRetryable?: (messageId: string) => boolean;
+  onRetryError?: (messageId: string) => void;
   /** 空态（无消息且非 busy 非编辑态时渲染）。缺省 = 主对话通用空态。 */
   emptyState?: () => HTMLElement;
   /** followup 卡提交/取消；面板必须注入自己的 resolve/cancel，缺省为 no-op。 */
@@ -641,13 +643,19 @@ export function renderConversation(
       const identitySig = turnIdentity
         ? `${turnIdentity.kind}|${turnIdentity.name}|${turnIdentity.badge}`
         : 'crew';
-      const sig = `${sigAgentTurn(batch, isStreaming, userPinnedOpen)}|${identitySig}`;
+      const retrySig = batch
+        .filter((message) => message.role === 'error')
+        .map((message) => hooks.isErrorRetryable?.(message.id) ? 'retry' : 'no-retry')
+        .join(',');
+      const sig = `${sigAgentTurn(batch, isStreaming, userPinnedOpen)}|${identitySig}|${retrySig}`;
       const capturedBatch = batch;
       pushPlan(turnId, sig, () =>
         renderAgentTurn(capturedBatch, {
           isStreaming,
           userPinnedOpen,
           turnDurationMs,
+          ...(hooks.isErrorRetryable ? { isErrorRetryable: hooks.isErrorRetryable } : {}),
+          ...(hooks.onRetryError ? { onRetryError: hooks.onRetryError } : {}),
           ...(turnIdentity ? { identity: turnIdentity } : {}),
         }),
       );

@@ -50,6 +50,29 @@ describe('toolIconKind（时间线工具图标分类）', () => {
 });
 
 describe('renderAgentTurn', () => {
+  it('仅可重试的错误显示重试按钮并传回错误消息 id', () => {
+    const onRetryError = vi.fn();
+    const root = renderAgentTurn(
+      [
+        ...makeMessages({ thinking: undefined }),
+        { id: 'error-1', role: 'error', content: 'API 暂时不可用', timestamp: 1_700_000_000_001 },
+      ],
+      {
+        isStreaming: false,
+        userPinnedOpen: null,
+        turnDurationMs: 0,
+        isErrorRetryable: (messageId) => messageId === 'error-1',
+        onRetryError,
+      },
+    );
+
+    const retry = root.querySelector<HTMLButtonElement>('.process-timeline__retry');
+    expect(retry?.textContent).toBe('重试上次操作');
+    retry?.click();
+    expect(onRetryError).toHaveBeenCalledWith('error-1');
+    expect(retry?.disabled).toBe(true);
+  });
+
   it('普通 Crew 回合与生成占位复用智能体页 Q 版耳机机器人头像', () => {
     const turn = renderAgentTurn(makeMessages({ thinking: undefined }), {
       isStreaming: false,

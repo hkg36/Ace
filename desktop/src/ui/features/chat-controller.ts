@@ -149,6 +149,33 @@ interface DispatchOptions {
   wikiConfirmationId?: string;
   workDisabledPreferenceIds?: string[];
 }
+
+interface RetryOperation {
+  sessionId: string;
+  query: string;
+  attachments: NonNullable<ChatMessage['attachments']>;
+  options: DispatchOptions;
+}
+
+const retryOperationsByRequestId = new Map<string, RetryOperation>();
+const retryOperationsByErrorId = new Map<string, RetryOperation>();
+
+function appendRetryableError(sessionId: string, content: string, operation: RetryOperation): void {
+  const message = appendMessage(sessionId, 'error', content);
+  retryOperationsByErrorId.set(message.id, operation);
+}
+
+export function isRetryableError(sessionId: string, errorMessageId: string): boolean {
+  return !isBusy(sessionId) && retryOperationsByErrorId.get(errorMessageId)?.sessionId === sessionId;
+}
+
+export async function retryFailedOperation(sessionId: string, errorMessageId: string): Promise<boolean> {
+  const operation = retryOperationsByErrorId.get(errorMessageId);
+  if (!operation || operation.sessionId !== sessionId || isBusy(sessionId)) return false;
+  retryOperationsByErrorId.delete(errorMessageId);
+  return dispatchWs(sessionId, operation.query, operation.attachments, operation.options);
+}
+
 /**
  * index.ts init 时调用，把 openSession / setTab 等顶层入口注入本模块。
  * 语义等价于抽离前这些函数作为 index.ts 顶层函数互相直接调用。
@@ -587,6 +614,10 @@ export function renderChat(): void {
   }
 
   renderConversation(container, containerId, sessionId, {
+    isErrorRetryable: (messageId) => Boolean(sessionId && isRetryableError(sessionId, messageId)),
+    onRetryError: (messageId) => {
+      if (sessionId) void retryFailedOperation(sessionId, messageId);
+    },
     emptyState: () => {
       // Work 办公会话用专属空态，不复用通用助手的「开始一段对话 / Team 模式」文案。
       const isWorkSession = chatTab?.classList.contains('work-session-active') ?? false;
@@ -1181,6 +1212,19 @@ export function applyChunk(chunk: ChatChunk): void {
     sequence: typeof chunk.sequence === 'number' ? chunk.sequence : 0,
   };
   const result = reduceChunk(parsed, snapshot);
+  const failedRequestId = reqId ?? book.activeRequestId;
+  if (parsed.kind === 'error' && failedRequestId) {
+    const operation = retryOperationsByRequestId.get(failedRequestId);
+    const errorMessage = result.messageUpserts.find(
+      (upsert) => upsert.op === 'append' && upsert.message?.role === 'error',
+    );
+    if (operation && errorMessage?.op === 'append' && errorMessage.message) {
+      retryOperationsByErrorId.set(errorMessage.message.id, operation);
+    }
+    retryOperationsByRequestId.delete(failedRequestId);
+  } else if (result.finalize && failedRequestId) {
+    retryOperationsByRequestId.delete(failedRequestId);
+  }
 
   // 修法1：delta 按 gateway_sequence 重组，覆盖 reducer 「cur + text 按到达顺序拼接」的脆弱累积。
   // 后端在重连 replay 等场景会把旧低序号帧晚于更高序号帧投递，到达顺序 != 生成顺序 → 盲目追加会
@@ -1455,6 +1499,18 @@ export async function dispatchWs(
         ...(planActiveOverride !== undefined ? { planActive: planActiveOverride } : {}),
       }
     : subScenarioOrOptions;
+  const retryOperation: RetryOperation = {
+    sessionId,
+    query,
+    attachments: attachments.map((attachment) => ({ ...attachment })),
+    options: {
+      ...dispatchOptions,
+      planActive: dispatchOptions.planActive ?? state.composerMode === 'plan',
+      ...(dispatchOptions.workDisabledPreferenceIds
+        ? { workDisabledPreferenceIds: [...dispatchOptions.workDisabledPreferenceIds] }
+        : {}),
+    },
+  };
   const subScenario = dispatchOptions.subScenario ?? '';
   if (!requireRendererLogin()) return false;
   if (isDraftSession(sessionId)) {
@@ -1463,7 +1519,7 @@ export async function dispatchWs(
   // 新一轮发送：解除对该会话的「迟到分片屏蔽」
   removeSuppressedSession(sessionId);
   if (!state.socket || !state.backendConnected) {
-    appendMessage(sessionId, 'error', '服务未连接，请稍后重试。');
+    appendRetryableError(sessionId, '服务未连接，请稍后重试。', retryOperation);
     setBusyWithUi(sessionId, false);
     renderChat();
     notify('服务未连接');
@@ -1487,6 +1543,7 @@ export async function dispatchWs(
   const planActiveForSend = dispatchOptions.planActive ?? state.composerMode === 'plan';
   const workDisabledPreferenceIds = dispatchOptions.workDisabledPreferenceIds
     ?? (productModeStore.get().productMode === 'work' ? takeDisabledWorkPreferenceIds() : []);
+  retryOperation.options.workDisabledPreferenceIds = [...workDisabledPreferenceIds];
   // Plan 模式：发送实际 query 之前先发一帧 plan_enter。
   // 注意：openTurn 必须在 plan_enter 之后——plan 控制 status 会把 busy 置 idle，
   // 若先开乐观回合再 plan_enter，会把刚置起的 busy/计时打回 idle。
@@ -1500,6 +1557,7 @@ export async function dispatchWs(
     renderChat();
   }
   const requestId = newTurnRequestId();
+  retryOperationsByRequestId.set(requestId, retryOperation);
   openTurnForRequest(sessionId, requestId);
   // 乐观置 running + 立刻渲染「正在思考」：覆盖后续 await socket.send 与长 TTFT 空白。
   setBusyWithUi(sessionId, true);
@@ -1535,10 +1593,11 @@ export async function dispatchWs(
     ...(workDisabledPreferenceIds.length > 0 ? { work_disabled_preference_ids: workDisabledPreferenceIds } : {}),
   });
   if (!ok) {
+    retryOperationsByRequestId.delete(requestId);
     logStream('dispatch', 'send-ws-failed', { sessionId, requestId });
     ttftRequestStartedAt.delete(requestId);
     discardEmptyOptimisticAssistant(sessionId);
-    appendMessage(sessionId, 'error', '服务未连接，请稍后重试。');
+    appendRetryableError(sessionId, '服务未连接，请稍后重试。', retryOperation);
     setBusyWithUi(sessionId, false);
     setStatusWithUi(sessionId, 'idle');
     renderChat();

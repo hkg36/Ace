@@ -303,6 +303,27 @@
   color: var(--mw-status-danger);
 }
 
+.process-timeline__retry {
+  display: block;
+  margin-top: var(--mw-space-2);
+  padding: var(--mw-space-1) var(--mw-space-2);
+  border: 1px solid var(--mw-border-default);
+  border-radius: var(--mw-radius-2);
+  background: var(--mw-bg-subtle);
+  color: var(--mw-text-primary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.process-timeline__retry:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.process-timeline__retry:disabled {
+  cursor: wait;
+  opacity: .6;
+}
+
 .msg__body {
   display: grid;
   gap: var(--mw-space-1);

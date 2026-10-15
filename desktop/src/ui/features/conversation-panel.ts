@@ -27,6 +27,8 @@ import {
 import {
   cancelEdit,
   editQueueItem,
+  isRetryableError,
+  retryFailedOperation,
   sendMessage,
   steerQueuedItem,
   stopGeneration,
@@ -197,6 +199,14 @@ export function mountConversationPanel(
     renderedContainerIds.add(target.containerId);
     renderConversation(target.container, target.containerId, opts.getSessionId(), {
       getSessionId: opts.getSessionId,
+      isErrorRetryable: (messageId) => {
+        const sessionId = opts.getSessionId();
+        return Boolean(sessionId && isRetryableError(sessionId, messageId));
+      },
+      onRetryError: (messageId) => {
+        const sessionId = opts.getSessionId();
+        if (sessionId) void retryFailedOperation(sessionId, messageId);
+      },
       ...(opts.emptyState ? { emptyState: opts.emptyState } : {}),
       ...(opts.followupHandlers ? { followupHandlers: opts.followupHandlers } : {}),
       afterRender: (sessionId) => {

@@ -860,6 +860,8 @@ export interface AgentTurnOptions {
     tone?: number;
     icon?: IconId;
   };
+  isErrorRetryable?: (messageId: string) => boolean;
+  onRetryError?: (messageId: string) => void;
 }
 
 function createAgentTurnAvatar(identity?: AgentTurnOptions['identity']): HTMLElement {
@@ -1046,6 +1048,17 @@ export function renderAgentTurn(messages: ChatMessage[], options: AgentTurnOptio
         `<div class="process-timeline__content process-timeline__error"></div>`,
       );
       content.textContent = m.content;
+      if (options.isErrorRetryable?.(m.id) && options.onRetryError) {
+        const retry = document.createElement('button');
+        retry.type = 'button';
+        retry.className = 'process-timeline__retry';
+        retry.textContent = '重试上次操作';
+        retry.addEventListener('click', () => {
+          retry.disabled = true;
+          options.onRetryError?.(m.id);
+        });
+        content.appendChild(retry);
+      }
       const item = renderTimelineItem(PROCESS_ERROR_ICON_SVG, 'process-timeline__icon--error', content);
       item.dataset.messageId = m.id;
       processParts.push(item);
