@@ -12,6 +12,8 @@ from typing import Any
 
 import requests
 
+from crew.state.config import load_audio_video_model_profile
+
 DEFAULT_PROMPT = "描述一下这张图片"
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"}
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
@@ -38,12 +40,8 @@ def _config_value(key: str) -> str:
     return os.environ.get(key, "").strip() or _env_file_value(key)
 
 
-def load_api_key() -> str:
-    return _config_value("VLM_API_KEY")
-
-
-def _chat_endpoint() -> str:
-    base_url = _config_value("VLM_BASE_URL").rstrip("/")
+def _chat_endpoint(base_url: str) -> str:
+    base_url = str(base_url or "").rstrip("/")
     if not base_url:
         return ""
     if base_url.endswith("/chat/completions"):
@@ -100,18 +98,23 @@ def _response_text(payload: Any) -> str:
     return ""
 
 
-def analyze_image(image_path: str | Path, prompt: str | None = None) -> str | None:
-    endpoint = _chat_endpoint()
-    model = _config_value("VLM_MODEL")
+def analyze_image(
+    image_path: str | Path,
+    prompt: str | None = None,
+    *,
+    api_key: str = "",
+    base_url: str = "",
+    model: str = "",
+) -> str | None:
+    endpoint = _chat_endpoint(base_url)
     if not endpoint or not model:
-        print("错误：请配置 VLM_BASE_URL 和 VLM_MODEL")
+        print("错误：音视频模型配置缺少服务地址或模型名称")
         return None
     if not validate_image(image_path):
         return None
 
     path = Path(image_path)
     headers = {"Content-Type": "application/json"}
-    api_key = load_api_key()
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
     body = {
@@ -143,7 +146,18 @@ def main() -> None:
     parser.add_argument("image_path", help="本地图片路径")
     parser.add_argument("--prompt", "-p", help="针对图片的问题")
     args = parser.parse_args()
-    result = analyze_image(args.image_path, args.prompt)
+    try:
+        profile = load_audio_video_model_profile()
+    except ValueError as exc:
+        print(f"错误：{exc}")
+        raise SystemExit(1) from exc
+    result = analyze_image(
+        args.image_path,
+        args.prompt,
+        api_key=profile.api_key,
+        base_url=profile.base_url,
+        model=profile.model,
+    )
     if not result:
         raise SystemExit(1)
     print(result)

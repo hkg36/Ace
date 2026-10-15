@@ -12,7 +12,6 @@ import asyncio
 import json
 import hashlib
 import inspect
-import re
 import sys
 import time
 import uuid
@@ -47,9 +46,6 @@ from crew.state.config import (
     _build_profile_from_payload,
     is_placeholder_model_profile,
     load_config,
-    remove_env_key,
-    resolve_writable_env_path,
-    write_env_key,
 )
 from crew.state.home import ensure_crew_home
 from crew.agent.skills import configure_skill_filter
@@ -71,9 +67,6 @@ from crew.tasks import TaskRuntime
 log = get_logger("app")
 OwnerSessionKey = tuple[str, str]
 
-_MODEL_API_KEY_ENV_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-_MODEL_API_KEY_ENV_EXAMPLES = "CREW_API_KEY、OPENAI_API_KEY、ANTHROPIC_API_KEY 或 *_API_KEY*"
-
 # 子 agent 工具黑名单（按 toolset 维度），用于 DELEGATE_BLOCKED_TOOLS。
 # 一行可调：想放开飞书/定时任务，删掉对应项即可。
 #   subagent/external_agent —— 禁嵌套 + 不转外部 agent
@@ -92,16 +85,6 @@ SUBAGENT_BLOCKED_TOOLSETS = {
     "wiki.manage",
 }
 SUBAGENT_BLOCKED_TOOLSET_PREFIXES = ("feishu",)
-
-
-def _validate_model_api_key_env(api_key_env: str) -> str:
-    """校验模型 API Key 的 env 名，避免模型配置变成任意环境变量写入口。"""
-    name = str(api_key_env or "").strip() or "CREW_API_KEY"
-    if not _MODEL_API_KEY_ENV_RE.fullmatch(name):
-        raise ValueError(f"非法 api_key_env: {name!r}")
-    if "API_KEY" not in name.upper():
-        raise ValueError(f"api_key_env 只能使用模型密钥变量名，例如 {_MODEL_API_KEY_ENV_EXAMPLES}")
-    return name
 
 
 def _payload_bool(value: Any) -> bool:
@@ -1989,13 +1972,13 @@ class CrewApp:
         Args:
             payload: {
                 id: 必填,
-                name, base_url, model, api_key_env, temperature,
+                name, base_url, model, temperature,
                 max_tokens, context_window, timeout: 选填,
                 api_key: 选填明文 key，提供则写入模型 YAML
             }
 
         Raises:
-            ValueError: id 缺失/重复；env 写入失败；yaml 写回失败。
+            ValueError: id 缺失/重复；yaml 写回失败。
         """
         cfg = self.config
         model_id = str(payload.get("id") or "").strip()
@@ -2008,13 +1991,9 @@ class CrewApp:
         current_default_id = cfg.owner_active_model_id(owner) if owner else cfg.active_model_id
         current_default_is_placeholder = is_placeholder_model_profile(existing.get(current_default_id))
 
-        api_key_env = _validate_model_api_key_env(payload.get("api_key_env") or "CREW_API_KEY")
-        payload = {**payload, "api_key_env": api_key_env, "builtin": False}
-        api_key = str(payload.get("api_key") or "")
+        payload = {**payload, "builtin": False}
         if owner:
             profile = _build_profile_from_payload(model_id, payload)
-            if not api_key:
-                profile.api_key = cfg.owner_env_map(owner).get(api_key_env, "")
             profiles = cfg.owner_model_profiles(owner)
             profiles[model_id] = profile
             activate_new_model = bool(
@@ -2057,18 +2036,11 @@ class CrewApp:
         if active_model_id == model_id and loaded_val is not None and not _payload_bool(loaded_val):
             raise ValueError("当前激活模型不能设为未加载，请先切换到其它已加载模型")
 
-        api_key_env = _validate_model_api_key_env(
-            payload.get("api_key_env") or profiles[model_id].api_key_env
-        )
-        if "api_key_env" in payload:
-            payload = {**payload, "api_key_env": api_key_env}
         payload = {**payload, "builtin": profiles[model_id].builtin}
         api_key = str(payload.get("api_key") or "")
         if owner:
             current = profiles[model_id]
             preserved_key = current.api_key
-            if "api_key_env" in payload and api_key_env != current.api_key_env:
-                preserved_key = cfg.owner_env_map(owner).get(api_key_env, "")
             merged = {
                 "id": model_id,
                 "name": payload.get("name", current.name),
@@ -2148,12 +2120,8 @@ class CrewApp:
 
         if owner:
             removed = profiles.pop(model_id)
-            if not any(profile.api_key_env == removed.api_key_env for profile in profiles.values()):
-                remove_env_key(resolve_writable_env_path(owner_account_id), removed.api_key_env, sync_process_env=False)
         else:
             removed = cfg.remove_model(model_id)  # 内部校验"最后一个"
-            if not any(profile.api_key_env == removed.api_key_env for profile in cfg.model_profiles.values()):
-                remove_env_key(resolve_writable_env_path(owner_account_id), removed.api_key_env)
         switched_to: str | None = None
         if active_model_id == model_id:
             # 按 id 字典序切到剩余的第一个，行为可预测

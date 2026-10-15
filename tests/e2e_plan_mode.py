@@ -1,9 +1,9 @@
 # ruff: noqa: E402 -- e2e test configures environment/path before application imports
 """端到端：真实 LLM 驱动下走完整 Plan 模式闭环。
 
-默认用 default profile，需要环境变量 CREW_MODEL_API_KEY。
+默认用 default profile，需要在软件模型配置中填写 API Key。
 运行：
-    CREW_MODEL_API_KEY=... python tests/e2e_plan_mode.py
+    python tests/e2e_plan_mode.py
 
 安全：脚本在一个**临时项目目录**里运行（os.chdir + 临时 CREW_HOME），并在其中放一个
 玩具 cli.py 作为待改对象——agent 的 terminal/file_write 只作用于临时目录，绝不触碰真实仓库。
@@ -99,7 +99,7 @@ async def main() -> int:
     if not app.config.has_llm_key:
         print(
             f"[跳过] profile={app.config.active_model_id} 未配置 API Key。"
-            f"请 export CREW_MODEL_API_KEY=... 后重跑。"
+            "请先在软件的模型配置中填写 API Key 后重跑。"
         )
         return 2
 

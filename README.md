@@ -218,18 +218,20 @@ Crew 不绑定任何模型厂商，你有哪家的 Key，就用哪家的模型�
 1. 打开“设置 → 模型”。
 2. 点击“添加模型”。
 3. 填写模型 ID、接口模型名、API 协议、Base URL 和 API Key。
-4. 根据模型能力选择文本、工具调用和视觉能力并保存；需要时在模型列表中将其设为默认。
+4. 根据模型能力选择文本、工具调用、视觉或音视频处理能力并保存；需要时在模型列表中将其设为默认。
 
 设置页的默认模型供新会话继承；已有会话可在对话输入区通过模型选择器单独切换。
 外部 Team 规划、组队描述生成和 Dynamic Kanban 编排等辅助推理使用当前账号的默认模型，不跟随单个会话的模型切换。
 Wiki 编译与摘要默认遵循同一规则；如需独立模型，可在配置中显式设置 `wiki.model`。
 
-Crew 支持 OpenAI 兼容接口和 Anthropic Messages 接口。API Key 只会写入当前 owner 的本地 `.env`，不会写入 `config.yaml`、返回给前端或发送给远程认证服务——密钥这东西，知道的人越少越好。不同运行模式的具体落盘位置见[配置与本地数据](#-配置与本地数据)。
+Crew 支持 OpenAI 兼容接口和 Anthropic Messages 接口。API Key 由软件模型配置管理，并写入当前 owner 的本地配置文件；不会从环境变量读取，也不会发送给远程认证服务。不同运行模式的具体落盘位置见[配置与本地数据](#-配置与本地数据)。
+图片和视频理解技能只会选择已启用“音视频处理”能力的模型。图片理解使用该模型的 Base URL、模型名和 API Key；视频理解还需在 `.env` 配置外部上传与分析服务地址，调用前会要求确认视频上传。
+旧配置中的 `api_key_env` 字段不再读取环境变量；升级后请在模型设置中填写 API Key。
 
 ### 方式二：通过配置文件配置
 
 适合 CLI、Web 或无桌面界面的部署。先从 `config/config.yaml.example` 创建本地
-`config/config.yaml`，再声明模型；其中 `api_key_env` 是保存密钥的环境变量名：
+`config/config.yaml`，再声明模型。模型 API Key 直接写在对应模型的 `api_key` 字段：
 
 ```yaml
 llm:
@@ -239,21 +241,20 @@ llm:
     my-model:
       name: My Model
       provider: openai          # 或 anthropic
-      api_key_env: MY_MODEL_API_KEY
+      api_key: your-api-key
       base_url: https://api.example.com/v1
       model: your-model-name
       context_window: 128000
       capabilities: [text, tools]
 ```
 
-再把真实密钥写入项目根目录的 `.env`：
+音视频处理模型需在能力列表中添加 `audio_video`：
 
-```dotenv
-MY_MODEL_API_KEY=your-api-key
+```yaml
+      capabilities: [text, tools, audio_video]
 ```
 
-保存配置后重启 Crew Gateway。不要把真实 API Key 写入 `config/config.yaml`、源码、测试或 README；
-本地 `config/config.yaml` 和 `.env` 均不应提交。真的，别提交，血的教训都是别人的，但也可以是你的。
+保存配置后重启 Crew Gateway。不要把真实 API Key 写入源码、测试或 README；本地配置文件不应提交。
 
 ## 🔐 账号与租户登录
 

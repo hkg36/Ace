@@ -520,7 +520,7 @@ def test_export_crew_runtime_env_clears_stale_owner_account_id(tmp_path, monkeyp
     assert "CREW_OWNER_ACCOUNT_ID" not in os.environ
 
 
-def test_load_config_loads_env_from_configured_crew_home(tmp_path, monkeypatch):
+def test_load_config_ignores_model_key_from_configured_crew_home_env(tmp_path, monkeypatch):
     home = tmp_path / "custom-crew"
     home.mkdir()
     (home / ".env").write_text(
@@ -547,10 +547,10 @@ def test_load_config_loads_env_from_configured_crew_home(tmp_path, monkeypatch):
 
     assert os.environ["CREW_ENV_FILE"] == str(home / ".env")
     assert os.environ["CREW_TEST_HOME_ENV_KEY"] == "sk-from-crew-home"
-    assert cfg.active_model.api_key == "sk-from-crew-home"
+    assert cfg.active_model.api_key == ""
 
 
-def test_load_config_reads_model_key_from_system_config_env(tmp_path, monkeypatch):
+def test_load_config_ignores_model_key_from_system_config_env(tmp_path, monkeypatch):
     root = tmp_path / "project"
     config_dir = root / "config"
     crew_home = root / ".crew"
@@ -578,7 +578,7 @@ def test_load_config_reads_model_key_from_system_config_env(tmp_path, monkeypatc
 
     cfg = load_config(cfg_path)
 
-    assert cfg.active_model.api_key == "sk-from-system-config"
+    assert cfg.active_model.api_key == ""
     assert os.environ["CREW_ENV_FILE"] == str(crew_home / ".env")
 
 
@@ -638,7 +638,7 @@ def test_frozen_config_initializes_crew_home_from_example(tmp_path, monkeypatch)
         "llm:\n  active: default\n  models:\n    default:\n      model: packaged-model\n",
         encoding="utf-8",
     )
-    (config_dir / ".env.example").write_text("CREW_MODEL_API_KEY=\n", encoding="utf-8")
+    (config_dir / ".env.example").write_text("CREW_LOG_LEVEL=INFO\n", encoding="utf-8")
     user_home = tmp_path / "user-home"
     monkeypatch.setattr(config_module, "ROOT", root)
     monkeypatch.setattr(sys, "frozen", True, raising=False)
@@ -653,7 +653,7 @@ def test_frozen_config_initializes_crew_home_from_example(tmp_path, monkeypatch)
     assert cfg.active_model.model == "packaged-model"
 
 
-def test_load_config_user_crew_env_overrides_system_config_env(tmp_path, monkeypatch):
+def test_load_config_ignores_user_crew_model_key_env(tmp_path, monkeypatch):
     root = tmp_path / "project"
     config_dir = root / "config"
     crew_home = root / ".crew"
@@ -685,7 +685,7 @@ def test_load_config_user_crew_env_overrides_system_config_env(tmp_path, monkeyp
 
     cfg = load_config(cfg_path)
 
-    assert cfg.active_model.api_key == "sk-from-user-crew"
+    assert cfg.active_model.api_key == ""
     assert os.environ["CREW_ENV_FILE"] == str(crew_home / ".env")
 
 

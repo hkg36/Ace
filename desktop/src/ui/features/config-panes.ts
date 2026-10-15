@@ -177,6 +177,7 @@ const MODEL_CAPABILITIES = [
   { id: 'text', label: '文本' },
   { id: 'tools', label: '工具调用' },
   { id: 'vision', label: '视觉（网页截图）' },
+  { id: 'audio_video', label: '音视频处理' },
 ] as const;
 
 function ensureModelCapabilitiesField(): HTMLElement | null {
@@ -213,7 +214,7 @@ function ensureModelCapabilitiesField(): HTMLElement | null {
 
   const hint = document.createElement('span');
   hint.className = 'channel-connect-hint';
-  hint.textContent = '只有真实支持图片输入的模型才应勾选视觉；未勾选时仍可使用 DOM 浏览。';
+  hint.textContent = '仅勾选模型实际支持的能力；音视频处理技能只会使用已勾选音视频能力的模型。';
   field.appendChild(hint);
 
   if (contextWindow?.parentElement === form) {

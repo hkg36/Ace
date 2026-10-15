@@ -1,4 +1,4 @@
-"""配置加载：config.yaml 保存结构化配置与模型 API Key，.env 保留旧配置回退支持。
+"""配置加载：config.yaml 保存结构化配置与模型 API Key；.env 仅覆盖非密钥运行参数。
 
 不配 LLM key 时 has_llm_key=False，上层会自动回退到 FakeProvider，保证流程可跑通。
 """
@@ -113,7 +113,7 @@ class ModelProfile:
     id: str
     name: str = ""
     api_key: str = ""
-    api_key_env: str = "CREW_API_KEY"
+    api_key_env: str = "CREW_API_KEY"  # Legacy metadata; never used to read a secret.
     provider: str = "openai"
     base_url: str = ""
     model: str = "gpt-4o-mini"
@@ -138,6 +138,13 @@ class ModelProfile:
     def supports_vision(self) -> bool:
         """Whether this profile may send image inputs to its provider."""
         return "vision" in {
+            str(item).strip().lower() for item in self.capabilities
+        }
+
+    @property
+    def supports_audio_video(self) -> bool:
+        """Whether this profile is available to audio/video processing skills."""
+        return "audio_video" in {
             str(item).strip().lower() for item in self.capabilities
         }
 
@@ -190,7 +197,7 @@ def is_placeholder_model_profile(profile: ModelProfile | None) -> bool:
 class Config:
     # --- LLM ---
     api_key: str = ""
-    api_key_env: str = "CREW_API_KEY"
+    api_key_env: str = "CREW_API_KEY"  # Legacy metadata; never used to read a secret.
     provider: str = "openai"
     base_url: str = ""
     model: str = "gpt-4o-mini"
@@ -396,16 +403,6 @@ class Config:
         """读取 owner 私有 .env，不污染全局进程环境。"""
         return _load_env_map(resolve_writable_env_path(owner_account_id))
 
-    def _owner_builtin_allows_global_key_fallback(self, owner_account_id: str | None = None) -> bool:
-        """本地 owner 与隔离开发 owner 可读取进程环境中的模型 Key。"""
-        owner = str(owner_account_id or "").strip()
-        if owner == "local":
-            return True
-        if not self.gateway_dev_mode:
-            return False
-        dev_account = str(self.gateway_dev_account or "").strip()
-        return bool(owner and dev_account and owner == dev_account)
-
     def owner_model_profiles(self, owner_account_id: str | None = None) -> dict[str, ModelProfile]:
         """返回 owner 可见的模型视图：全局共享模型 + owner 私有模型。
 
@@ -413,20 +410,13 @@ class Config:
         - 基础 ``config.yaml`` 中加载的模型始终视为共享内置模型
         - owner overlay 中的模型始终视为 owner 私有模型
 
-        基础 YAML 中显式保存的 Key 优先；缺失时再从 owner 私有 ``.env`` 解析。
-        单用户本地 owner 与 dev 开发 owner 也可读取进程环境。
+        模型密钥只读取模型配置中的 ``api_key`` 字段。
         """
-        env_map = self.owner_env_map(owner_account_id)
-        fallback_global = self._owner_builtin_allows_global_key_fallback(owner_account_id)
         profiles: dict[str, ModelProfile] = {}
         for model_id, profile in self.model_profiles.items():
             if not profile.builtin:
                 continue
-            builtin = replace(profile)
-            builtin.api_key = builtin.api_key or _lookup_api_key(
-                builtin.api_key_env, env_map, fallback_global=fallback_global
-            )
-            profiles[model_id] = builtin
+            profiles[model_id] = replace(profile)
 
         overlay = self.owner_overlay_data(owner_account_id)
         models = (overlay.get("llm") or {}).get("models")
@@ -434,7 +424,7 @@ class Config:
             for model_id, raw in models.items():
                 if not isinstance(raw, dict):
                     continue
-                profile = _build_owner_model_profile(str(model_id), raw, env_map)
+                profile = _build_owner_model_profile(str(model_id), raw)
                 profiles[str(model_id)] = profile
         return profiles
 
@@ -450,7 +440,7 @@ class Config:
             return self.active_model_id
 
         # 开源模板自带的 default 只用于说明配置结构。owner 已经配置真实可用
-        # 模型后，不能再让这个占位项因为 CREW_API_KEY 的兼容回落而被误判为
+        # 模型后，不能再让这个占位项被误判为
         # 可用默认模型，否则辅助规划会请求 api.example.com/your-model-name。
         ready_model_id = next(
             (
@@ -672,15 +662,7 @@ class Config:
             raise KeyError(model_id)
 
         current = self.model_profiles[model_id]
-        if profile_data.get("api_key"):
-            api_key = profile_data["api_key"]
-        elif (
-            "api_key_env" in profile_data
-            and profile_data["api_key_env"] != current.api_key_env
-        ):
-            api_key = ""
-        else:
-            api_key = current.api_key
+        api_key = profile_data.get("api_key") or current.api_key
         # 合并：原值 + 新值（dataclass 字段集合作为白名单，防止脏字段写入）
         merged = {
             "id": model_id,
@@ -698,8 +680,7 @@ class Config:
             "builtin": profile_data.get("builtin", current.builtin),
             "capabilities": profile_data.get("capabilities", list(current.capabilities)),
         }
-        # Explicit profile keys take precedence; legacy env-only profiles retain
-        # their existing key through _build_profile_from_payload's fallback.
+        # Keep the configured key unless a new one is explicitly supplied.
         profile = _build_profile_from_payload(model_id, merged)
         self.model_profiles[model_id] = profile
         return profile
@@ -1094,7 +1075,7 @@ def _model_capabilities(raw: dict[str, Any]) -> list[str]:
 
 def _build_model_profile(model_id: str, raw: dict[str, Any]) -> ModelProfile:
     api_key_env = str(raw.get("api_key_env") or "CREW_API_KEY")
-    api_key = str(raw.get("api_key") or "") or _lookup_api_key(api_key_env, None, fallback_global=True)
+    api_key = str(raw.get("api_key") or "")
     capabilities = _model_capabilities(raw)
 
     return ModelProfile(
@@ -1117,9 +1098,9 @@ def _build_model_profile(model_id: str, raw: dict[str, Any]) -> ModelProfile:
     )
 
 
-def _build_owner_model_profile(model_id: str, raw: dict[str, Any], env_map: dict[str, str]) -> ModelProfile:
+def _build_owner_model_profile(model_id: str, raw: dict[str, Any]) -> ModelProfile:
     api_key_env = str(raw.get("api_key_env") or "CREW_API_KEY")
-    api_key = str(raw.get("api_key") or "") or _lookup_api_key(api_key_env, env_map, fallback_global=False)
+    api_key = str(raw.get("api_key") or "")
     capabilities = _model_capabilities(raw)
     return ModelProfile(
         id=model_id,
@@ -1143,11 +1124,10 @@ def _build_owner_model_profile(model_id: str, raw: dict[str, Any], env_map: dict
 def _build_profile_from_payload(model_id: str, payload: dict[str, Any]) -> ModelProfile:
     """从 CRUD payload 构建 ModelProfile。
 
-    与 _build_model_profile 的区别：后者从 yaml+env 加载；前者从用户输入构建。
-    Payload 中未提供 key 时回退读取旧配置里的环境变量。
+    Payload 中未提供 key 时使用空值；模型密钥只由软件配置管理。
     """
     api_key_env = str(payload.get("api_key_env") or "CREW_API_KEY").strip() or "CREW_API_KEY"
-    api_key = str(payload.get("api_key") or "") or _lookup_api_key(api_key_env, None, fallback_global=True)
+    api_key = str(payload.get("api_key") or "")
     capabilities = _model_capabilities(payload)
     return ModelProfile(
         id=model_id,
@@ -1191,29 +1171,6 @@ def _serialize_profile_for_yaml(profile: ModelProfile) -> dict[str, Any]:
     if not profile.supports_vision:
         data["vision"] = False
     return data
-
-
-def _lookup_api_key(
-    api_key_env: str,
-    env_map: dict[str, str] | None,
-    *,
-    fallback_global: bool,
-) -> str:
-    env_name = str(api_key_env or "CREW_API_KEY").strip() or "CREW_API_KEY"
-    if env_map is not None:
-        local = str(env_map.get(env_name, "") or "")
-        if local:
-            return local
-        if env_name != "CREW_API_KEY":
-            fallback = str(env_map.get("CREW_API_KEY", "") or "")
-            if fallback:
-                return fallback
-        if not fallback_global:
-            return ""
-    value = os.getenv(env_name, "") or ""
-    if not value and env_name != "CREW_API_KEY" and fallback_global:
-        value = os.getenv("CREW_API_KEY", "") or ""
-    return value
 
 
 def _load_env_map(env_path: Path) -> dict[str, str]:
@@ -1378,16 +1335,6 @@ def _load_crew_home_env_file(crew_home: str | Path | None) -> None:
     path = Path(crew_home).expanduser() / ".env"
     if path.is_file():
         load_dotenv(path, override=True)
-
-
-def _refresh_model_profile_keys(cfg: Config) -> None:
-    """在额外加载 .env 后为尚无 YAML 密钥的 profile 回退到环境变量。"""
-    for profile in cfg.model_profiles.values():
-        if not profile.api_key:
-            api_key = os.getenv(profile.api_key_env, "") or ""
-            if not api_key and profile.api_key_env != "CREW_API_KEY":
-                api_key = os.getenv("CREW_API_KEY", "") or ""
-            profile.api_key = api_key
 
 
 def _resolve_active_model_id(cfg: Config) -> str:
@@ -1712,12 +1659,11 @@ def load_config(config_path: str | Path | None = None) -> Config:
     configure_security(enabled=cfg.security_enabled)
 
     # config.yaml 里的 runtime.crew_home 需要等 yaml 解析后才知道；
-    # 加载 {crew_home}/.env 后刷新已构建的模型 profile key。
+    # 加载该目录下供非密钥运行参数使用的 .env。
     if cfg.crew_home and not os.getenv("CREW_HOME"):
         _load_crew_home_env_file(cfg.crew_home)
-        _refresh_model_profile_keys(cfg)
 
-    # 2) 环境变量覆盖（敏感信息只从 env 取）
+    # 2) Environment variable overrides for non-secret runtime settings.
     if not cfg.model_profiles:
         cfg.model_profiles["default"] = _build_model_profile(
             "default",
@@ -1743,11 +1689,8 @@ def load_config(config_path: str | Path | None = None) -> Config:
 
     profile = cfg.activate_model(cfg.active_model_id)
 
-    # 旧式单模型配置保留 CREW_* 全局覆盖；多模型 profile 只读取自己的 api_key_env，
-    # 避免 .env 里的 CREW_MODEL/CREW_BASE_URL 误覆盖已选择的命名模型。
-    if profile.id == "default" and profile.api_key_env == "CREW_API_KEY":
-        if os.getenv("CREW_API_KEY"):
-            profile.api_key = os.environ["CREW_API_KEY"]
+    # 旧式单模型配置保留 CREW_* 全局覆盖；API Key 始终来自模型配置。
+    if profile.id == "default":
         if os.getenv("CREW_BASE_URL"):
             profile.base_url = os.environ["CREW_BASE_URL"]
         if os.getenv("CREW_MODEL"):
@@ -1760,9 +1703,6 @@ def load_config(config_path: str | Path | None = None) -> Config:
             profile.context_window = _as_int_or_none(os.environ["CREW_CONTEXT_WINDOW"])
         if os.getenv("CREW_TIMEOUT"):
             profile.timeout = _as_float(os.environ["CREW_TIMEOUT"], profile.timeout)
-    elif os.getenv("CREW_API_KEY") and not profile.api_key:
-        # 命名模型缺少专属 key 时，允许回退到全局 key。
-        profile.api_key = os.environ["CREW_API_KEY"]
     cfg.activate_model(profile.id)
     if os.getenv("CREW_LOG_LEVEL"):
         cfg.log_level = os.environ["CREW_LOG_LEVEL"]
@@ -1829,3 +1769,41 @@ def load_config(config_path: str | Path | None = None) -> Config:
         cfg.memory_db_path = str(mem_path)
 
     return cfg
+
+
+def resolve_audio_video_model_profile(
+    cfg: Config,
+    owner_account_id: str | None = None,
+) -> ModelProfile:
+    """Choose the active audio/video-capable model, or the first loaded match."""
+    owner = str(owner_account_id or "").strip()
+    if owner:
+        profiles = cfg.owner_model_profiles(owner)
+        preferred_id = cfg.owner_active_model_id(owner)
+    else:
+        profiles = cfg.model_profiles
+        preferred_id = cfg.active_model_id
+
+    preferred = profiles.get(preferred_id)
+    if preferred and preferred.loaded and preferred.supports_audio_video:
+        return preferred
+
+    for model_id in sorted(profiles):
+        profile = profiles[model_id]
+        if profile.loaded and profile.supports_audio_video:
+            return profile
+
+    raise ValueError("没有已加载且启用音视频处理能力的模型，请在模型配置中启用该能力")
+
+
+def load_audio_video_model_profile() -> ModelProfile:
+    """Load the configured audio/video-capable profile for media skills."""
+    cfg = load_config()
+    try:
+        from crew.core.runctx import current_owner_account_id
+
+        owner = str(current_owner_account_id.get() or "").strip()
+    except (ImportError, AttributeError):
+        owner = ""
+    owner = owner or os.getenv("CREW_OWNER_ACCOUNT_ID", "").strip()
+    return resolve_audio_video_model_profile(cfg, owner)

@@ -8,8 +8,6 @@ metadata:
     emoji: 🖼️
     requires:
       bins: [python3]
-      env: [VLM_BASE_URL, VLM_MODEL]
-    primaryEnv: VLM_API_KEY
   zh_name: 图片理解
   zh_description: 使用用户配置的 OpenAI 兼容视觉模型分析本地图片，并支持 Crew LLM Wiki 图片材料解析。
   query_examples:
@@ -21,19 +19,11 @@ python: ">=3.8"
 
 # 图片理解
 
-本 Skill 通过用户自行配置的 OpenAI 兼容视觉模型分析单张本地图片。Crew 不提供默认密钥，也不会在配置不完整时发起网络请求。
+本 Skill 使用模型配置中启用了“音视频处理”能力的模型分析单张本地图片。模型服务地址、名称和 API Key 均来自软件内的模型配置。
 
 ## 配置
 
-在 `CREW_ENV_FILE` 指向的文件或进程环境中配置：
-
-```dotenv
-VLM_BASE_URL=https://your-model-service.example/v1
-VLM_MODEL=your-vision-model
-VLM_API_KEY=your-api-key
-```
-
-`VLM_API_KEY` 对不需要鉴权的本地模型服务可以留空。接口需兼容 `POST /chat/completions`，并支持消息中的 `image_url` data URL。
+在模型配置页面为支持图像输入的模型填写服务地址、模型名称和 API Key，并勾选“音视频处理”。未勾选该能力的模型不会用于此 Skill。接口需兼容 `POST /chat/completions`，并支持消息中的 `image_url` data URL。
 
 ## 使用
 

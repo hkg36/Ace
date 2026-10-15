@@ -1,7 +1,7 @@
 """模型 profile CRUD 端点集成测试。
 
 完全隔离的 tmp 环境：
-- 用 tmp_path 构造独立 config.yaml + .env
+- 用 tmp_path 构造独立 config.yaml
 - CREW_HOME / db_path 指向 tmp，避免污染真实 .crew/ 与 db
 - 不调用全局 build_app() 默认 fixture，所有 app 实例都从 tmp 配置加载
 """
@@ -39,6 +39,7 @@ def _bootstrap_tmp_env(tmp_path: Path) -> Path:
             "models": {
                 "alpha": {
                     "name": "Alpha",
+                    "api_key": "sk-alpha-xxx",
                     "api_key_env": "TEST_ALPHA_API_KEY",
                     "base_url": "https://alpha.example.com/v1",
                     "model": "alpha-1",
@@ -53,8 +54,6 @@ def _bootstrap_tmp_env(tmp_path: Path) -> Path:
         "gateway": {"host": "127.0.0.1", "port": 8000, "admin_accounts": ["A:uid-a"]},
     }
     config_yaml.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
-    # 预置 env
-    os.environ["TEST_ALPHA_API_KEY"] = "sk-alpha-xxx"
     # CREW_HOME 指向 tmp，避免污染真实 .crew/
     os.environ["CREW_HOME"] = str(tmp_path / ".crew")
     owner_overlay = _owner_overlay_path(tmp_path)
@@ -67,6 +66,7 @@ def _bootstrap_tmp_env(tmp_path: Path) -> Path:
                     "models": {
                         "beta": {
                             "name": "Beta",
+                            "api_key": "sk-beta-xxx",
                             "api_key_env": "TEST_BETA_API_KEY",
                             "base_url": "https://beta.example.com/v1",
                             "model": "beta-1",
@@ -79,12 +79,6 @@ def _bootstrap_tmp_env(tmp_path: Path) -> Path:
             allow_unicode=True,
             sort_keys=False,
         ),
-        encoding="utf-8",
-    )
-    # owner A 的 .env 同时持有内置 alpha 与私有 beta 的 key：生产策略下内置模型的 key
-    # 只从 owner .env 解析（不再回退全局进程 env），故 alpha 也必须落进 owner .env。
-    (owner_overlay.parent / ".env").write_text(
-        "TEST_ALPHA_API_KEY=sk-alpha-xxx\nTEST_BETA_API_KEY=sk-beta-xxx\n",
         encoding="utf-8",
     )
     return config_yaml
@@ -370,28 +364,27 @@ async def test_create_model_writes_key_to_yaml_not_env(api, tmp_path: Path, auth
             "api_key": "sk-delta-secret",
         })
     assert resp.status_code == 201
-    env_text = (_owner_overlay_path(tmp_path).parent / ".env").read_text(encoding="utf-8")
-    assert "TEST_DELTA_API_KEY=sk-delta-secret" not in env_text
+    env_path = _owner_overlay_path(tmp_path).parent / ".env"
+    assert not env_path.exists()
     overlay = yaml.safe_load(_owner_overlay_path(tmp_path).read_text(encoding="utf-8")) or {}
     assert overlay["llm"]["models"]["delta"]["api_key"] == "sk-delta-secret"
 
 
 @pytest.mark.asyncio
-async def test_create_model_rejects_non_api_key_env(api, auth_headers, tmp_path, monkeypatch):
-    """模型 API Key 写入只允许密钥变量名，避免覆盖 CREW_HOME 等运行变量。"""
+async def test_create_model_ignores_api_key_environment_name(api, auth_headers, tmp_path, monkeypatch):
+    """旧 api_key_env 字段不再用于读取密钥或修改进程环境。"""
     protected_home = str(tmp_path / "keep-this-home")
     monkeypatch.setenv("CREW_HOME", protected_home)
     transport = ASGITransport(app=api)
     async with AsyncClient(transport=transport, base_url="http://test", headers=auth_headers) as client:
         resp = await client.post("/api/config/models", json={
-            "id": "danger",
+            "id": "legacy-env",
             "api_key_env": "CREW_HOME",
-            "model": "danger-1",
-            "api_key": "sk-should-not-write",
+            "model": "legacy-env-1",
         })
 
-    assert resp.status_code == 409
-    assert "api_key_env" in resp.json()["error"]
+    assert resp.status_code == 201
+    assert resp.json()["profile"]["has_key"] is False
     assert os.environ["CREW_HOME"] == protected_home
 
 
@@ -500,13 +493,12 @@ async def test_update_active_model_rebuilds_provider(api, auth_headers):
         resp1 = await client.get("/api/config")
         assert resp1.json()["has_key"] is True
 
-        # 更新 beta 的 api_key_env 到一个不存在的变量（让 has_key 变 False）
+        # 修改旧 api_key_env 元数据不会替换或重新读取模型密钥。
         resp2 = await client.put("/api/config/models/beta", json={
             "api_key_env": "NONEXISTENT_API_KEY_VAR_XYZ",
         })
     assert resp2.status_code == 200
-    # 更新后激活模型 has_key 应反映新状态
-    assert resp2.json()["has_key"] is False
+    assert resp2.json()["has_key"] is True
 
 
 @pytest.mark.asyncio
@@ -597,7 +589,8 @@ async def test_delete_model_keeps_shared_env_key_for_remaining_profile(api, auth
         resp = await client.delete("/api/config/models/beta")
 
     assert resp.status_code == 200
-    assert api.state.crew.config.owner_env_map("A:uid-a").get("TEST_BETA_API_KEY") == "sk-beta-xxx"
+    assert api.state.crew.config.owner_env_map("A:uid-a").get("TEST_BETA_API_KEY") is None
+    assert api.state.crew.owner_model_profiles("A:uid-a")["shared"].api_key == "sk-beta"
 
 
 @pytest.mark.asyncio

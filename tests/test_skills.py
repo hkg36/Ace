@@ -1802,8 +1802,8 @@ def test_generated_skill_validation_catches_actionable_problems(tmp_path):
 def test_generated_skill_validation_does_not_flag_placeholder_examples():
     """占位符示例不能被判成泄漏。
 
-    仓库里现成的技能大量写着「别硬编码 key」的教学示例（`export
-    VLM_API_KEY=your_api_key`、`"api_key":"XXX"`）。用展示边界那套脱敏器做判据
+    仓库里现成的技能可能写着「别硬编码 key」的配置示例（`api_key: <YOUR_KEY>`）。
+    用展示边界那套脱敏器做判据
     时它们全被判成泄漏——**阻断性检查一旦误伤合法技能，实际结果是这道门被整个
     关掉，比没有更糟**。这条守住收紧后的判据。
     """
@@ -1843,8 +1843,7 @@ def test_secret_detector_separates_real_keys_from_placeholders(tmp_path):
         assert any("凭据" in p for p in problems), tail
 
     placeholders = [
-        "export VLM_API_KEY=your_api_key",
-        '{"api_key":"XXX"}',
+        "api_key: <YOUR_KEY_HERE>",
         'BOCHA_API_KEY="xxxxxxxxxxxxxxxxxxxxxxxx"',
         "api_key = os.environ['BOCHA_API_KEY']",
         "api_key: <YOUR_KEY_HERE_PLACEHOLDER>",

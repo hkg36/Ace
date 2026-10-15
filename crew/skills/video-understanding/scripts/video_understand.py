@@ -14,6 +14,8 @@ from urllib.parse import urlparse
 
 import requests
 
+from crew.state.config import load_audio_video_model_profile
+
 DEFAULT_PROMPT = "描述一下这个视频"
 SUPPORTED_EXTENSIONS = {".mp4", ".mov", ".webm", ".avi", ".mkv", ".flv", ".m4v"}
 MAX_VIDEO_BYTES = 100 * 1024 * 1024
@@ -43,10 +45,6 @@ def _env_file_value(key: str) -> str:
 
 def _config_value(key: str) -> str:
     return os.environ.get(key, "").strip() or _env_file_value(key)
-
-
-def load_api_key() -> str:
-    return _config_value("VLM_API_KEY")
 
 
 def _timeout_seconds() -> float:
@@ -140,11 +138,10 @@ def _response_text(payload: Any) -> str:
     return ""
 
 
-def analyze_video(video_url: str, prompt: str | None, api_key: str) -> str | None:
+def analyze_video(video_url: str, prompt: str | None, api_key: str, model: str) -> str | None:
     endpoint = _config_value("VLM_VIDEO_ANALYZE_URL")
-    model = _config_value("VLM_VIDEO_MODEL")
     if not endpoint or not model:
-        print("错误：请配置 VLM_VIDEO_ANALYZE_URL 和 VLM_VIDEO_MODEL")
+        print("错误：请配置 VLM_VIDEO_ANALYZE_URL 和音视频模型")
         return None
     safe_prompt, error = sanitize_prompt(prompt)
     if error or safe_prompt is None:
@@ -184,11 +181,16 @@ def main() -> None:
         print_security_notice()
         print("错误：需要用户明确确认后才能上传视频", file=sys.stderr)
         raise SystemExit(1)
-    api_key = load_api_key()
+    try:
+        profile = load_audio_video_model_profile()
+    except ValueError as exc:
+        print(f"错误：{exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+    api_key = profile.api_key
     video_url = upload_video(args.video_path, api_key)
     if not video_url:
         raise SystemExit(1)
-    result = analyze_video(video_url, args.prompt, api_key)
+    result = analyze_video(video_url, args.prompt, api_key, profile.model)
     if not result:
         raise SystemExit(1)
     print(result)

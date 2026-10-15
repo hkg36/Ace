@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from crew.state.config import ModelProfile
 from crew.wiki.multimodal import (
     _IMAGE_UNDERSTAND_SCRIPT,
     _VIDEO_UNDERSTAND_SCRIPT,
@@ -48,6 +49,18 @@ def sample_video(tmp_path: Path) -> Path:
     return path
 
 
+@pytest.fixture(autouse=True)
+def _configured_audio_video_model(monkeypatch):
+    profile = ModelProfile(
+        id="media",
+        api_key="configured-media-key",
+        base_url="https://vision.example/v1",
+        model="media-model",
+        capabilities=["text", "audio_video"],
+    )
+    monkeypatch.setattr("crew.wiki.multimodal._media_model_profile", lambda: profile)
+
+
 def test_is_image_mime():
     assert is_image_mime("image/jpeg") is True
     assert is_image_mime("image/png") is True
@@ -74,7 +87,13 @@ def test_describe_image_returns_text(sample_image: Path):
         result = describe_image(str(sample_image))
 
     assert result == "一只猫在睡觉"
-    mock_module.analyze_image.assert_called_once_with(str(sample_image), None)
+    mock_module.analyze_image.assert_called_once_with(
+        str(sample_image),
+        None,
+        api_key="configured-media-key",
+        base_url="https://vision.example/v1",
+        model="media-model",
+    )
 
 
 def test_describe_image_raises_when_none(sample_image: Path):
@@ -98,7 +117,6 @@ def test_describe_video_requires_confirmation(sample_video: Path):
 
 def test_describe_video_uploads_and_analyzes(sample_video: Path):
     mock_module = MagicMock()
-    mock_module.load_api_key.return_value = "fake-key"
     mock_module.upload_video.return_value = "https://media.example/file/123"
     mock_module.analyze_video.return_value = "视频里有一只狗在跑"
 
@@ -109,15 +127,14 @@ def test_describe_video_uploads_and_analyzes(sample_video: Path):
         result = describe_video(str(sample_video), "描述视频", confirm_upload=True)
 
     assert result == "视频里有一只狗在跑"
-    mock_module.upload_video.assert_called_once_with(str(sample_video), "fake-key")
+    mock_module.upload_video.assert_called_once_with(str(sample_video), "configured-media-key")
     mock_module.analyze_video.assert_called_once_with(
-        "https://media.example/file/123", "描述视频", "fake-key"
+        "https://media.example/file/123", "描述视频", "configured-media-key", "media-model"
     )
 
 
 def test_describe_video_raises_when_upload_fails(sample_video: Path):
     mock_module = MagicMock()
-    mock_module.load_api_key.return_value = "fake-key"
     mock_module.upload_video.return_value = None
 
     with patch(
@@ -142,7 +159,6 @@ def test_describe_media_routes_to_image(sample_image: Path):
 
 def test_describe_media_routes_to_video(sample_video: Path):
     mock_module = MagicMock()
-    mock_module.load_api_key.return_value = "fake-key"
     mock_module.upload_video.return_value = "https://media.example/file/456"
     mock_module.analyze_video.return_value = "video desc"
 
@@ -184,12 +200,15 @@ def test_bundled_image_skill_calls_configured_openai_compatible_endpoint(
         calls.append((url, kwargs))
         return _FakeResponse({"choices": [{"message": {"content": "一张测试图片"}}]})
 
-    monkeypatch.setenv("VLM_BASE_URL", "https://vision.example/v1")
-    monkeypatch.setenv("VLM_MODEL", "vision-model")
-    monkeypatch.setenv("VLM_API_KEY", "fake-key")
     monkeypatch.setattr(module.requests, "post", fake_post)
 
-    result = module.analyze_image(sample_image, "描述图片")
+    result = module.analyze_image(
+        sample_image,
+        "描述图片",
+        api_key="configured-key",
+        base_url="https://vision.example/v1",
+        model="vision-model",
+    )
 
     assert result == "一张测试图片"
     assert calls[0][0] == "https://vision.example/v1/chat/completions"
@@ -198,6 +217,7 @@ def test_bundled_image_skill_calls_configured_openai_compatible_endpoint(
     assert body["messages"][0]["content"][1]["image_url"]["url"].startswith(
         "data:image/png;base64,"
     )
+    assert calls[0][1]["headers"]["Authorization"] == "Bearer configured-key"
 
 
 def test_bundled_image_skill_does_not_request_without_configuration(
@@ -205,12 +225,11 @@ def test_bundled_image_skill_does_not_request_without_configuration(
     monkeypatch,
 ):
     module = _load_script_module("crew_skill_image_understand", _IMAGE_UNDERSTAND_SCRIPT)
-    monkeypatch.delenv("VLM_BASE_URL", raising=False)
-    monkeypatch.delenv("VLM_MODEL", raising=False)
+    monkeypatch.setenv("VLM_API_KEY", "legacy-environment-key")
     post = MagicMock()
     monkeypatch.setattr(module.requests, "post", post)
 
-    assert module.analyze_image(sample_image) is None
+    assert module.analyze_image(sample_image, api_key="", base_url="", model="") is None
     post.assert_not_called()
 
 
@@ -229,11 +248,10 @@ def test_bundled_video_skill_uses_only_configured_endpoints(
 
     monkeypatch.setenv("VLM_VIDEO_UPLOAD_URL", "https://upload.example/media")
     monkeypatch.setenv("VLM_VIDEO_ANALYZE_URL", "https://analyze.example/video")
-    monkeypatch.setenv("VLM_VIDEO_MODEL", "video-model")
     monkeypatch.setattr(module.requests, "post", fake_post)
 
     video_url = module.upload_video(sample_video, "fake-key")
-    result = module.analyze_video(video_url, "描述视频", "fake-key")
+    result = module.analyze_video(video_url, "描述视频", "fake-key", "video-model")
 
     assert video_url == "https://media.example/video/1"
     assert result == "视频描述"

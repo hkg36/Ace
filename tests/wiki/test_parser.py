@@ -368,14 +368,14 @@ def test_parse_pptx_full_elements(monkeypatch):
 
 
 def test_parse_pptx_image_failure_shows_user_hint(monkeypatch):
-    """VLM 未配置/不可用或调用失败时，解析结果应包含用户可见的提示。"""
+    """音视频模型未配置/不可用或调用失败时，解析结果应包含用户可见的提示。"""
     from crew.wiki.multimodal import MediaUnderstandingError
 
     monkeypatch.setitem(sys.modules, "pptx", _make_fake_pptx_full())
     monkeypatch.setattr(
         "crew.wiki.multimodal.describe_image",
         lambda path, prompt=None: (_ for _ in ()).throw(
-            MediaUnderstandingError("未找到 VLM_API_KEY，请在 .env 中配置")
+            MediaUnderstandingError("没有已加载且启用音视频处理能力的模型")
         ),
     )
 
@@ -385,7 +385,7 @@ def test_parse_pptx_image_failure_shows_user_hint(monkeypatch):
         result = parse_document_to_markdown(path)
 
     assert "### 图片" in result
-    assert "[图片内容未解析：未找到 VLM_API_KEY，请在 .env 中配置]" in result
+    assert "[图片内容未解析：没有已加载且启用音视频处理能力的模型]" in result
 
 
 def test_parse_pptx_image_failure_uses_cache(monkeypatch):

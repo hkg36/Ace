@@ -19,9 +19,11 @@ import yaml
 
 from crew.state.config import (
     Config,
+    ModelProfile,
     _serialize_profile_for_yaml,
     load_config,
     remove_env_key,
+    resolve_audio_video_model_profile,
     resolve_writable_env_path,
     write_env_key,
 )
@@ -40,6 +42,7 @@ def tmp_yaml(tmp_path: Path) -> Path:
             "models": {
                 "alpha": {
                     "name": "Alpha",
+                    "api_key": "sk-alpha",
                     "api_key_env": "ALPHA_KEY",
                     "provider": "anthropic",
                     "base_url": "https://alpha.example.com/v1",
@@ -51,6 +54,7 @@ def tmp_yaml(tmp_path: Path) -> Path:
                 },
                 "beta": {
                     "name": "Beta",
+                    "api_key": "sk-beta",
                     "api_key_env": "BETA_KEY",
                     "base_url": "https://beta.example.com/v1",
                     "model": "beta-1",
@@ -66,16 +70,9 @@ def tmp_yaml(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def cfg(tmp_yaml: Path) -> Config:
-    """从 tmp_yaml 加载 Config，注入伪 key 让 has_key 为真。"""
-    os.environ["ALPHA_KEY"] = "sk-alpha"
-    os.environ["BETA_KEY"] = "sk-beta"
+    """从 tmp_yaml 加载带显式配置密钥的 Config。"""
     cfg = load_config(config_path=str(tmp_yaml))
     yield cfg
-    # 清理 env，避免污染后续测试
-    os.environ.pop("ALPHA_KEY", None)
-    os.environ.pop("BETA_KEY", None)
-    os.environ.pop("GAMMA_KEY", None)
-    os.environ.pop("DELTA_KEY", None)
 
 
 # ----------------------- Config.add_model -----------------------
@@ -337,6 +334,58 @@ def test_yaml_api_key_wins_over_crew_home_env(tmp_path: Path, monkeypatch: pytes
     cfg = load_config(config_path=str(config_path))
 
     assert cfg.model_profiles["alpha"].api_key == "yaml-key"
+
+
+def test_model_api_key_is_not_loaded_from_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "llm:\n  models:\n    alpha:\n      api_key_env: ALPHA_KEY\n      model: alpha-model\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ALPHA_KEY", "legacy-environment-key")
+    monkeypatch.setenv("CREW_API_KEY", "legacy-global-key")
+
+    cfg = load_config(config_path=str(config_path))
+
+    assert cfg.model_profiles["alpha"].api_key == ""
+    assert cfg.model_profiles["alpha"].has_key is False
+
+
+def test_audio_video_model_selection_uses_only_enabled_profiles():
+    text_model = ModelProfile(id="active", loaded=True, capabilities=["text", "tools"])
+    media_model = ModelProfile(
+        id="media",
+        loaded=True,
+        capabilities=["text", "audio_video"],
+    )
+    unloaded_media_model = ModelProfile(
+        id="unloaded",
+        loaded=False,
+        capabilities=["audio_video"],
+    )
+    cfg = Config(
+        active_model_id="active",
+        model_profiles={
+            "active": text_model,
+            "media": media_model,
+            "unloaded": unloaded_media_model,
+        },
+    )
+
+    assert resolve_audio_video_model_profile(cfg) is media_model
+    cfg.active_model_id = "media"
+    assert resolve_audio_video_model_profile(cfg) is media_model
+
+
+def test_audio_video_model_selection_requires_enabled_loaded_profile():
+    cfg = Config(
+        model_profiles={
+            "text": ModelProfile(id="text", capabilities=["text"]),
+        },
+    )
+
+    with pytest.raises(ValueError, match="音视频处理能力"):
+        resolve_audio_video_model_profile(cfg)
 
 
 def test_persist_atomic_via_tmp(cfg: Config, tmp_yaml: Path):

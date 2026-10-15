@@ -8,8 +8,7 @@ metadata:
     emoji: 🎬
     requires:
       bins: [python3]
-      env: [VLM_VIDEO_UPLOAD_URL, VLM_VIDEO_ANALYZE_URL, VLM_VIDEO_MODEL]
-    primaryEnv: VLM_API_KEY
+      env: [VLM_VIDEO_UPLOAD_URL, VLM_VIDEO_ANALYZE_URL]
   zh_name: 视频理解
   zh_description: 使用用户配置的外部视频分析服务理解本地视频，并支持 Crew LLM Wiki 视频材料解析。
   query_examples:
@@ -21,18 +20,16 @@ python: ">=3.8"
 
 # 视频理解
 
-本 Skill 会把本地视频上传到用户配置的外部服务，再调用视频分析接口。Crew 不预置服务地址或 API Key，配置不完整时不会上传文件。
+本 Skill 使用模型配置中启用了“音视频处理”能力的模型 API Key 调用外部视频服务。服务地址必须配置，配置不完整时不会上传文件。
 
 ## 配置
 
 ```dotenv
 VLM_VIDEO_UPLOAD_URL=https://your-media-service.example/upload
 VLM_VIDEO_ANALYZE_URL=https://your-media-service.example/analyze
-VLM_VIDEO_MODEL=your-video-model
-VLM_API_KEY=your-api-key
 ```
 
-上传接口接收 multipart 字段 `file`，响应通过 `fileUrl`、`filePath` 或 `url` 返回媒体地址；分析接口接收 `model`、`prompt`、`video` 和 `stream` 字段。分析结果可使用 OpenAI 兼容的 `choices[0].message.content`，或 `result.text` / `data.text`。
+上传接口接收 multipart 字段 `file`，响应通过 `fileUrl`、`filePath` 或 `url` 返回媒体地址；分析接口接收模型配置中的 `model`、`prompt`、`video` 和 `stream` 字段。分析结果可使用 OpenAI 兼容的 `choices[0].message.content`，或 `result.text` / `data.text`。
 
 ## 使用
 

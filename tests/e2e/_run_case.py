@@ -56,13 +56,6 @@ def _setup_config(spec: dict[str, Any], case_dir: Path) -> Any:
     os.environ["CREW_HOME"] = str(case_dir / ".crew")
 
     cfg = load_config()
-    # 开源版 README 的约定是 CREW_MODEL_API_KEY；若本地配置仍按默认
-    # CREW_API_KEY 读取，测试环境自动补齐，避免 test runner 与项目文档脱节。
-    if not cfg.has_llm_key and os.getenv("CREW_MODEL_API_KEY"):
-        profile = cfg.model_profiles.get(cfg.active_model_id)
-        if profile is not None:
-            profile.api_key = os.environ["CREW_MODEL_API_KEY"]
-            cfg.api_key = profile.api_key
     cfg.db_path = str(case_dir / "crew.db")
     cfg.memory_db_path = str(case_dir / "memory.db")
     cfg.crew_home = str(case_dir / ".crew")

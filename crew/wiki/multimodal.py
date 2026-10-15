@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from crew.state.config import ModelProfile, load_audio_video_model_profile
 from crew.state.logging import get_logger
 
 log = get_logger("wiki.multimodal")
@@ -51,6 +52,13 @@ def is_video_mime(mime: str) -> bool:
 def is_media_mime(mime: str) -> bool:
     """判断 MIME 是否为支持的图片或视频类型。"""
     return is_image_mime(mime) or is_video_mime(mime)
+
+
+def _media_model_profile() -> ModelProfile:
+    try:
+        return load_audio_video_model_profile()
+    except ValueError as exc:
+        raise MediaUnderstandingError(str(exc)) from exc
 
 
 def _load_script_module(name: str, path: Path) -> Any:
@@ -93,12 +101,19 @@ def describe_image(path: str | Path, prompt: str | None = None) -> str:
     Raises:
         MediaUnderstandingError: 理解失败。
     """
+    profile = _media_model_profile()
     image_module = _load_script_module("crew_skill_image_understand", _IMAGE_UNDERSTAND_SCRIPT)
     analyze_image = getattr(image_module, "analyze_image")
 
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
-        result = analyze_image(str(path), prompt)
+        result = analyze_image(
+            str(path),
+            prompt,
+            api_key=profile.api_key,
+            base_url=profile.base_url,
+            model=profile.model,
+        )
 
     if result is None:
         output = buf.getvalue().strip()
@@ -129,18 +144,14 @@ def describe_video(path: str | Path, prompt: str | None = None, *, confirm_uploa
             needs_confirmation=True,
         )
 
+    profile = _media_model_profile()
     video_module = _load_script_module("crew_skill_video_understand", _VIDEO_UNDERSTAND_SCRIPT)
-    load_api_key = getattr(video_module, "load_api_key")
     upload_video = getattr(video_module, "upload_video")
     analyze_video = getattr(video_module, "analyze_video")
 
-    api_key = load_api_key()
-    if not api_key:
-        raise MediaUnderstandingError("未找到 VLM_API_KEY，无法分析视频")
-
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
-        video_url = upload_video(str(path), api_key)
+        video_url = upload_video(str(path), profile.api_key)
 
     if not video_url:
         output = buf.getvalue().strip()
@@ -148,7 +159,12 @@ def describe_video(path: str | Path, prompt: str | None = None, *, confirm_uploa
 
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
-        result = analyze_video(video_url, prompt or "描述下这个视频", api_key)
+        result = analyze_video(
+            video_url,
+            prompt or "描述下这个视频",
+            profile.api_key,
+            profile.model,
+        )
 
     if result is None:
         output = buf.getvalue().strip()

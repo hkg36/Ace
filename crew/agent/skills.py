@@ -2194,7 +2194,7 @@ def validate_generated_skill(source_dir: Path | str, slug: str = "") -> list[str
     # 判据故意收得很紧（见 _looks_like_real_secret）。用展示边界那套脱敏器做判据
     # 试过，误报率高到不可用——仓库里 bocha-search、video-understanding 等技能的
     # SKILL.md 会被判成泄漏，而它们命中的其实是「别硬编码 key」这类**教学示例**
-    # （`export VLM_API_KEY=your_api_key`）。阻断性检查一旦误伤合法技能，实际
+    # （模型配置中的 `api_key: your-api-key`）。阻断性检查一旦误伤合法技能，实际
     # 结果是这道门被整个关掉，比没有更糟。
     for path in sorted(src.rglob("*")):
         if not path.is_file():

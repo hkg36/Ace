@@ -67,6 +67,7 @@ def owner_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                     "models": {
                         "alpha": {
                             "name": "Alpha",
+                            "api_key": "sk-alpha-global",
                             "api_key_env": "ALPHA_API_KEY",
                             "provider": "openai",
                             "base_url": "https://alpha.example.com/v1",
@@ -100,6 +101,7 @@ def owner_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                     "models": {
                         "MiniMax-M3": {
                             "name": "MiniMax-M3",
+                            "api_key": "sk-minimax-owner",
                             "api_key_env": "CREW_API_KEY",
                             "provider": "anthropic",
                             "base_url": "https://api.minimaxi.com/anthropic",
@@ -113,8 +115,6 @@ def owner_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         ),
         encoding="utf-8",
     )
-    (owner_home / ".env").write_text("CREW_API_KEY=sk-minimax-owner\n", encoding="utf-8")
-
     # 断言：ContextVar 默认空（模拟 handle → agents.get 时机）
     assert current_owner_account_id.get() == ""
     return app, owner
@@ -183,6 +183,7 @@ def test_existing_owner_profile_replaces_placeholder_default_at_runtime(
                     "models": {
                         "deepseek": {
                             "name": "DeepSeek",
+                            "api_key": "sk-owner",
                             "api_key_env": "CREW_API_KEY",
                             "base_url": "https://api.deepseek.com",
                             "model": "deepseek-chat",
@@ -196,8 +197,6 @@ def test_existing_owner_profile_replaces_placeholder_default_at_runtime(
         ),
         encoding="utf-8",
     )
-    (owner_home / ".env").write_text("CREW_API_KEY=sk-owner\n", encoding="utf-8")
-
     assert cfg.owner_default_model_id(owner) == "deepseek"
     assert cfg.owner_default_model_profile(owner).model == "deepseek-chat"
 
