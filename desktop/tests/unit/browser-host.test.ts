@@ -531,6 +531,7 @@ vi.mock('electron', async () => {
 
   class FakeSession extends EventEmitter {
     profilePath: string;
+    userAgent = '';
     permissionCheck: unknown = null;
     permissionRequest: unknown = null;
     proxy: unknown = null;
@@ -553,6 +554,10 @@ vi.mock('electron', async () => {
 
     setPermissionCheckHandler(handler: unknown): void {
       this.permissionCheck = handler;
+    }
+
+    setUserAgent(userAgent: string): void {
+      this.userAgent = userAgent;
     }
 
     setPermissionRequestHandler(handler: unknown): void {
@@ -2892,6 +2897,9 @@ describe('BrowserHost', () => {
 
     expect(electron.sessions).toHaveLength(1);
     expect(electron.sessions[0].profilePath).toBe(PROFILE);
+    expect(electron.sessions[0].userAgent).toBe(
+      `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome} Safari/537.36`,
+    );
     expect(electron.sessions[0].permissionCheck).toBeTypeOf('function');
     expect(electron.sessions[0].proxy).toMatchObject({
       mode: 'fixed_servers',

@@ -162,6 +162,7 @@ protocol.registerSchemesAsPrivileged([
 // These switches have to be applied before Chromium starts.
 app.commandLine.appendSwitch('disable-quic');
 app.commandLine.appendSwitch('force-webrtc-ip-handling-policy', 'disable_non_proxied_udp');
+app.commandLine.appendSwitch('disable-blink-features', 'AutomationControlled');
 
 let mainWindow: BrowserWindow | null = null;
 const inspirationWindows = new Map<string, BrowserWindow>();
@@ -1038,6 +1039,14 @@ function openInspirationWindow(inspirationId: string, title = '灵感'): Browser
   pushInspirationWindowState(inspirationId, true);
   const target = `ace-site://${encodeURIComponent(inspirationId)}/`;
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  win.webContents.on('dom-ready', () => {
+  win.webContents.executeJavaScript(`
+      Object.defineProperty(navigator, 'webdriver', {
+        get: () => undefined
+      });
+      delete window.process;
+    `);
+  });
   win.webContents.on('will-navigate', (event, url) => {
     try {
       const parsed = new URL(url);

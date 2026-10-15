@@ -3148,6 +3148,9 @@ export class BrowserHost extends EventEmitter {
   }
 
   private configureSession(owner: BrowserOwner): void {
+    owner.session.setUserAgent(
+      `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome} Safari/537.36`,
+    );
     owner.session.setPermissionCheckHandler(() => true);
     owner.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(true));
     const listener: DownloadListener = (event, item, contents) => {
