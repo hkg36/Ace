@@ -2658,6 +2658,16 @@ def build_app(config: Config | None = None, *, enable_team: bool = True) -> Crew
         external_agents,
         interaction_bridge_getter=lambda: app.interaction_bridge,
     )
+    from crew.tools.model_tools import register_model_tools
+
+    register_model_tools(
+        registry,
+        profiles_for_owner=app.owner_model_profiles,
+        provider_factory=lambda profile: build_provider_for_profile(
+            profile,
+            cfg.stream_read_timeout,
+        ),
+    )
     from crew.tasks.tools import register_task_tools
 
     register_task_tools(registry, app.tasks)
