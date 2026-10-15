@@ -53,7 +53,7 @@ jobs:
           node-version: "22"
       - uses: astral-sh/setup-uv@v5
         with:
-          python-version: "3.11"
+          python-version: "3.13"
       - name: Prepare Python environment
         run: uv sync --extra dev
       - name: Build DMG
@@ -99,7 +99,7 @@ jobs:
           node-version: "22"
       - uses: astral-sh/setup-uv@v5
         with:
-          python-version: "3.11"
+          python-version: "3.13"
       - name: Prepare Python environment
         run: uv sync --extra dev
       - name: Build DMG
@@ -187,7 +187,7 @@ jobs:
           node-version: "22"
       - uses: astral-sh/setup-uv@v5
         with:
-          python-version: "3.11"
+          python-version: "3.13"
       - name: Install Inno Setup
         run: choco install innosetup --no-progress --yes
       - name: Build Windows installer

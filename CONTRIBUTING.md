@@ -13,7 +13,7 @@
 环境要求和完整安装步骤见 [README](README.md#环境要求)。从仓库根目录创建 Python 环境：
 
 ```bash
-uv venv .venv --python 3.11
+uv venv .venv --python 3.13
 source .venv/bin/activate       # Windows PowerShell: .venv\Scripts\Activate.ps1
 uv pip install -e ".[dev,wiki]"
 ```

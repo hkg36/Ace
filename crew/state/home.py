@@ -445,8 +445,8 @@ def runtime_env_overrides(
         values["PIP_USER"] = "1"
 
         # 将用户 site-packages 加入 PYTHONPATH，确保 Python 能找到用户安装的包
-        # Windows: %APPDATA%\Python\Python311\site-packages
-        # Linux: ~/.local/lib/python3.11/site-packages
+        # Windows: %APPDATA%\Python\Python<major><minor>\site-packages
+        # Linux: ~/.local/lib/python<major>.<minor>/site-packages
         # 注意：首次运行前目录可能不存在，但仍需设置 PYTHONPATH，pip 会自动创建
         if sys.platform == 'win32':
             user_site = Path(os.environ.get("APPDATA", "")) / "Python" / f"Python{sys.version_info.major}{sys.version_info.minor}" / "site-packages"

@@ -40,13 +40,26 @@ RUN apt-get update -o Acquire::Check-Valid-Until=false && apt-get install -y --n
 
 WORKDIR /app
 
+# Build the gateway with the same Python version bundled for end users. Keep the
+# Buster base image so the PyInstaller binary remains compatible with older UOS/Kylin.
+ARG BUILD_PYTHON_VERSION=3.13.16
+ARG BUILD_PYTHON_RELEASE=20261013
+RUN mkdir -p /opt/python \
+    && curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 20 --max-time 180 \
+       "https://github.com/astral-sh/python-build-standalone/releases/download/${BUILD_PYTHON_RELEASE}/cpython-${BUILD_PYTHON_VERSION}+${BUILD_PYTHON_RELEASE}-x86_64-unknown-linux-gnu-install_only.tar.gz" \
+       -o /tmp/build-python.tar.gz \
+    && tar -xzf /tmp/build-python.tar.gz -C /opt/python --strip-components=1 \
+    && rm /tmp/build-python.tar.gz \
+    && /opt/python/bin/python3 --version
+ENV PATH="/opt/python/bin:${PATH}"
+
 # ---------------------------------------------------------------------------
 # 缓存优化：先安装第三方依赖（仅 pyproject.toml 变更时重建），再拷贝源码。
 # 避免 crew/ 下任何代码改动触发全量 pip 依赖重新下载（这是构建从几分钟
 # 变成半小时的根因）。
 # ---------------------------------------------------------------------------
 COPY pyproject.toml README.md ./
-RUN pip install --no-cache-dir \
+RUN python3 -m pip install --no-cache-dir \
     "openai>=1.30" \
     "fastapi>=0.110" \
     "uvicorn>=0.29" \
@@ -66,7 +79,7 @@ RUN pip install --no-cache-dir \
 
 # 源码拷贝（代码变更只影响这一层及以下，依赖层保持缓存）
 COPY crew ./crew
-RUN pip install --no-cache-dir --no-deps .
+RUN python3 -m pip install --no-cache-dir --no-deps .
 
 COPY config ./config
 COPY plugins ./plugins
@@ -210,14 +223,15 @@ RUN apt-get update -o Acquire::Check-Valid-Until=false && apt-get install -y --n
 # ----- 0) 下载内嵌运行时 (Python standalone + Node.js portable) -----
 # 与 Windows pack_exe.ps1 对齐：技能脚本需要 python/node，
 # 目标 UOS/信创系统可能未预装或版本过旧，打包内嵌运行时确保开箱即用。
-ARG BUNDLED_PYTHON_VERSION=3.11.9
+ARG BUNDLED_PYTHON_VERSION=3.13.16
+ARG BUNDLED_PYTHON_RELEASE=20261013
 ARG BUNDLED_NODE_VERSION=22.18.0
 
-# Python standalone (indygreg/python-build-standalone) — 自包含，无系统依赖
+# Python standalone (Astral python-build-standalone) — 自包含，无系统依赖
 # 直接从官方发布地址下载；如构建环境需要代理，由调用方通过标准代理环境变量配置。
 RUN mkdir -p /tmp/runtimes/python \
     && echo "Downloading Python ${BUNDLED_PYTHON_VERSION} standalone..." \
-    && PYTHON_REL="indygreg/python-build-standalone/releases/download/20240415/cpython-${BUNDLED_PYTHON_VERSION}+20240415-x86_64-unknown-linux-gnu-install_only.tar.gz" \
+    && PYTHON_REL="astral-sh/python-build-standalone/releases/download/${BUNDLED_PYTHON_RELEASE}/cpython-${BUNDLED_PYTHON_VERSION}+${BUNDLED_PYTHON_RELEASE}-x86_64-unknown-linux-gnu-install_only.tar.gz" \
 
     && PYTHON_URL="https://github.com/${PYTHON_REL}" \
     && echo "  downloading: ${PYTHON_URL}" \

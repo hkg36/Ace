@@ -48,7 +48,7 @@ if (Test-Path $DesktopPkgPath) {
 }
 
 # 打包内嵌运行时版本
-$BundledPythonVersion = "3.11.9"
+$BundledPythonVersion = "3.13.16"
 $BundledNodeVersion    = "22.18.0"
 
 Write-Host "===========================================" -ForegroundColor Cyan
@@ -59,15 +59,13 @@ Write-Host "===========================================" -ForegroundColor Cyan
 # -----------------------------------------------------------------------------
 # 1-4 步与之前相同：构建环境准备与桌面端编译
 # -----------------------------------------------------------------------------
-if (-not (Test-Path ".\.venv\Scripts\python.exe")) {
-    Write-Host "正在创建 uv 虚拟环境..." -ForegroundColor Yellow
-    uv venv .venv --python 3.11
-}
-
+Write-Host "正在同步 Python 3.13 打包环境..." -ForegroundColor Yellow
+uv sync --python 3.13 --extra dev
+if ($LASTEXITCODE -ne 0) { throw "uv sync 失败 (exit $LASTEXITCODE)" }
 if (-not (Test-Path ".\.venv\Scripts\pyinstaller.exe")) {
-    Write-Host "正在安装项目与 PyInstaller..." -ForegroundColor Yellow
-    uv pip install -e ".[dev]"
+    Write-Host "正在安装 PyInstaller..." -ForegroundColor Yellow
     uv pip install pyinstaller
+    if ($LASTEXITCODE -ne 0) { throw "PyInstaller 安装失败 (exit $LASTEXITCODE)" }
 }
 
 Write-Host "正在构建 Electron 桌面端..." -ForegroundColor Yellow
@@ -342,8 +340,8 @@ Copy-Item -Path $pythonCacheDir -Destination $pythonRtDir -Recurse -Force
 # 清理 __pycache__ 目录（减少文件数量和路径长度）
 Get-ChildItem -Path $pythonRtDir -Directory -Recurse -Filter "__pycache__" | Remove-Item -Recurse -Force
 
-# 删除不必要的大型依赖（如果存在）
-$heavyDeps = @("sympy", "onnxruntime", "numpy", "scipy", "pandas")
+# 删除技能不需要的大型依赖（如果存在）。numpy 是 pandas 和 matplotlib 的运行依赖。
+$heavyDeps = @("sympy", "onnxruntime", "scipy")
 foreach ($dep in $heavyDeps) {
     $depPath = Join-Path $pythonRtDir "Lib\site-packages\$dep"
     if (Test-Path $depPath) {
@@ -356,6 +354,10 @@ foreach ($dep in $heavyDeps) {
         $distInfo | Remove-Item -Recurse -Force
     }
 }
+
+$bundledPythonExe = Join-Path $pythonRtDir "python.exe"
+& $bundledPythonExe -c "import matplotlib, numpy, pandas; print('✓ pandas/numpy/matplotlib importable')"
+if ($LASTEXITCODE -ne 0) { throw "内嵌 Python 缺少 pandas、numpy 或 matplotlib，打包失败" }
 
 Write-Host "✓ Python 运行时已复制到 staging" -ForegroundColor Green
 

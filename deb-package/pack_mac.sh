@@ -41,7 +41,8 @@ case "$ARCH" in
         ;;
 esac
 DMG_NAME="crew-desktop_${VERSION}_${ARCH}.dmg"
-BUNDLED_PYTHON_VERSION="3.11.9"
+BUNDLED_PYTHON_VERSION="3.13.16"
+BUNDLED_PYTHON_RELEASE="20261013"
 BUNDLED_NODE_VERSION="22.18.0"
 
 HOST_ARCH="$(uname -m)"
@@ -65,6 +66,9 @@ echo "==========================================="
 # pip/uv 统一走清华镜像（pypi.org 直连在代理环境下极易 TLS EOF，与 Dockerfile.pack 同源）
 export PIP_INDEX_URL="${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}"
 export UV_INDEX_URL="${UV_INDEX_URL:-$PIP_INDEX_URL}"
+
+command -v uv >/dev/null || { echo "❌ 未找到 uv，请先安装 uv" >&2; exit 1; }
+uv sync --python 3.13 --extra dev || { echo "❌ Python 3.13 开发环境同步失败" >&2; exit 1; }
 
 VENV_PY="$ROOT_DIR/.venv/bin/python"
 if [ ! -x "$VENV_PY" ]; then
@@ -96,7 +100,6 @@ command -v hdiutil >/dev/null || { echo "❌ 未找到 hdiutil（应为 macOS �
 # ----- 1) PyInstaller 打包 crew-gateway -----
 echo ""
 echo "→ [1/6] PyInstaller 打包 crew-gateway..."
-venv_pip_install --no-deps .
 rm -rf dist build
 .venv/bin/pyinstaller --name crew-gateway \
     --onedir --noconfirm --clean \
@@ -134,7 +137,7 @@ mkdir -p "$RUNTIMES/python" "$RUNTIMES/node"
 # 代理/网络抖动环境下 HTTP2 易断（curl 16/SSL EOF），统一走 HTTP1.1 + 全错误重试
 CURL_OPTS=(-fsSL --http1.1 --retry 5 --retry-delay 3 --retry-all-errors --connect-timeout 20)
 
-PYTHON_REL="indygreg/python-build-standalone/releases/download/20240415/cpython-${BUNDLED_PYTHON_VERSION}+20240415-${PYTHON_ARCH}-install_only.tar.gz"
+PYTHON_REL="astral-sh/python-build-standalone/releases/download/${BUNDLED_PYTHON_RELEASE}/cpython-${BUNDLED_PYTHON_VERSION}+${BUNDLED_PYTHON_RELEASE}-${PYTHON_ARCH}-install_only.tar.gz"
 curl "${CURL_OPTS[@]}" "https://github.com/${PYTHON_REL}" -o /tmp/crew-python.tar.gz
 tar -xzf /tmp/crew-python.tar.gz -C "$RUNTIMES/python" --strip-components=1
 rm /tmp/crew-python.tar.gz

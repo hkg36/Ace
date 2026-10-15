@@ -95,7 +95,7 @@ Wiki 里存着上周的会议纪要和个人笔记，Agent 随取随用，再也
 
 | 依赖 | 版本 |
 |------|------|
-| Python | 3.11 或更高 |
+| Python | 3.11 或更高（开发环境和桌面安装包当前使用 3.13） |
 | [uv](https://docs.astral.sh/uv/) | 当前稳定版 |
 | Node.js | 22.12 或更高；仅 Desktop / Web 开发需要 |
 | npm | 10 或更高；仅 Desktop / Web 开发需要 |
@@ -111,7 +111,7 @@ git clone https://github.com/shuishenghualalala/Ace.git
 cd Ace
 
 # 安装 Python 依赖
-uv venv .venv --python 3.11
+uv venv .venv --python 3.13
 source .venv/bin/activate       # Windows PowerShell: .venv\Scripts\Activate.ps1
 uv pip install -e ".[dev,wiki]"
 

@@ -9,7 +9,7 @@ Crew 的 Electron 桌面客户端。它连接本机 Crew Gateway，提供对话�
 在仓库根目录执行：
 
 ```bash
-uv venv .venv --python 3.11
+uv venv .venv --python 3.13
 source .venv/bin/activate       # Windows PowerShell: .venv\Scripts\Activate.ps1
 uv pip install -e ".[dev,wiki]"
 
