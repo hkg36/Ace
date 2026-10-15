@@ -45,9 +45,10 @@ describe('模型表单 context_window 读', () => {
 
 describe('模型表单 context_window 填（openModelConfigModal → fillModelForm）', () => {
   it('标准档位（512k）直接选中', () => {
-    openModelConfigModal({ id: 'm', name: 'M', model: 'm', context_window: 512000, has_key: true, loaded: true });
+    openModelConfigModal({ id: 'm', name: 'M', model: 'm', api_key: 'sk-visible', context_window: 512000, has_key: true, loaded: true });
     const select = document.getElementById('cfg-model-context-window') as HTMLSelectElement;
     expect(select.value).toBe('512000');
+    expect((document.getElementById('cfg-model-api-key') as HTMLInputElement).value).toBe('sk-visible');
   });
 
   it('非标准值（180000）动态加 option 并选中，不丢值', () => {

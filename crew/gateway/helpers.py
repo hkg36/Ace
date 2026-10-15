@@ -127,7 +127,7 @@ def config_body(
 ) -> dict[str, Any]:
     """构造前端配置响应体（GET /api/config、POST /api/config/model、CRUD 共用）。"""
     profiles = [
-        profile.public_dict()
+        profile.public_dict(include_api_key=True)
         for profile in crew.owner_visible_model_profiles(
             owner_account_id,
             include_builtin_profiles=include_builtin_profiles,

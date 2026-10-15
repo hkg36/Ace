@@ -294,7 +294,7 @@ function fillModelForm(model?: ModelOption): void {
   set('cfg-model-model', model?.model ?? '');
   setModelProtocol(model?.provider ?? 'openai');
   set('cfg-model-base-url', model?.builtin ? '' : (model?.base_url ?? ''));
-  set('cfg-model-api-key', '');
+  set('cfg-model-api-key', model?.api_key ?? '');
   fillContextWindowSelect(model?.context_window);
   setModelCapabilities(model?.capabilities);
   setReadonly('cfg-model-id', !!model);

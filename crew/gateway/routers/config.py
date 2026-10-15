@@ -152,7 +152,7 @@ def create_config_router(crew, dispatcher=None) -> APIRouter:
         """统一 CRUD 响应：models 列表 + 当前激活模型（+ 可选 profile）。"""
         body: dict[str, Any] = {"ok": True, **_visible_config_body(request)}
         if model_profile is not None:
-            body["profile"] = model_profile.public_dict()
+            body["profile"] = model_profile.public_dict(include_api_key=True)
         return JSONResponse(body, status_code=status)
 
     @router.post("/api/config/models")

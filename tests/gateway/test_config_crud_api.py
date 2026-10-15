@@ -124,6 +124,7 @@ async def test_create_model_success(api, tmp_path: Path, auth_headers):
     assert data["ok"] is True
     assert data["profile"]["id"] == "gamma"
     assert data["profile"]["model"] == "gamma-1"
+    assert data["profile"]["api_key"] == "sk-gamma-xxx"
     assert data["profile"]["api_key_env"] == "TEST_GAMMA_API_KEY"
     assert data["profile"]["loaded"] is True
     # 列表应包含 3 个
@@ -357,9 +358,8 @@ async def test_session_history_recovers_tool_result_for_ui(api, auth_headers):
 
 
 @pytest.mark.asyncio
-async def test_create_model_writes_env(api, tmp_path: Path, auth_headers):
-    """新增时传 api_key 应写入 .env（虽然 env 路径由 resolve_writable_env_path 决定，
-    这里只能验证 os.environ 立即生效）。"""
+async def test_create_model_writes_key_to_yaml_not_env(api, tmp_path: Path, auth_headers):
+    """新增时 API Key 写入账号 YAML，不再写入单独的 .env。"""
     transport = ASGITransport(app=api)
     async with AsyncClient(transport=transport, base_url="http://test", headers=auth_headers) as client:
         resp = await client.post("/api/config/models", json={
@@ -371,7 +371,9 @@ async def test_create_model_writes_env(api, tmp_path: Path, auth_headers):
         })
     assert resp.status_code == 201
     env_text = (_owner_overlay_path(tmp_path).parent / ".env").read_text(encoding="utf-8")
-    assert "TEST_DELTA_API_KEY=sk-delta-secret" in env_text
+    assert "TEST_DELTA_API_KEY=sk-delta-secret" not in env_text
+    overlay = yaml.safe_load(_owner_overlay_path(tmp_path).read_text(encoding="utf-8")) or {}
+    assert overlay["llm"]["models"]["delta"]["api_key"] == "sk-delta-secret"
 
 
 @pytest.mark.asyncio
@@ -424,6 +426,38 @@ async def test_create_model_persists_to_yaml(api, tmp_path: Path, auth_headers):
 
     overlay = yaml.safe_load(_owner_overlay_path(tmp_path).read_text(encoding="utf-8")) or {}
     assert overlay["llm"]["models"]["gamma"]["model"] == "g-1"
+
+
+@pytest.mark.asyncio
+async def test_create_model_persists_api_key_in_owner_yaml(api, tmp_path: Path, auth_headers):
+    transport = ASGITransport(app=api)
+    async with AsyncClient(transport=transport, base_url="http://test", headers=auth_headers) as client:
+        created = await client.post("/api/config/models", json={
+            "id": "yaml-key",
+            "api_key_env": "TEST_GAMMA_API_KEY",
+            "model": "yaml-key-model",
+            "api_key": "key-persisted-in-yaml",
+        })
+        listed = await client.get("/api/config")
+        unchanged = await client.put("/api/config/models/yaml-key", json={
+            "api_key": "",
+            "temperature": 0.2,
+        })
+
+    assert created.status_code == 201
+    assert created.json()["profile"]["api_key"] == "key-persisted-in-yaml"
+    listed_profile = next(
+        item for item in listed.json()["model_profiles"] if item["id"] == "yaml-key"
+    )
+    assert listed_profile["api_key"] == "key-persisted-in-yaml"
+    assert unchanged.status_code == 200
+    assert unchanged.json()["profile"]["api_key"] == "key-persisted-in-yaml"
+    overlay = yaml.safe_load(_owner_overlay_path(tmp_path).read_text(encoding="utf-8")) or {}
+    assert overlay["llm"]["models"]["yaml-key"]["api_key"] == "key-persisted-in-yaml"
+
+    reloaded = load_config(config_path=str(tmp_path / "config.yaml"))
+    reloaded_profile = reloaded.owner_model_profiles(OWNER_A)["yaml-key"]
+    assert reloaded_profile.api_key == "key-persisted-in-yaml"
 
 
 # ----------------------- PUT /api/config/models/{id} -----------------------

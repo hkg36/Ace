@@ -2,7 +2,7 @@
 
 覆盖：
 - Config.add_model / update_model / remove_model 的语义
-- persist_model_profiles 写回 yaml（结构、不写敏感字段、原子替换）
+- persist_model_profiles 写回 yaml（结构、明文 API Key、原子替换）
 - write_env_key 写回 .env（新增 / 替换 / 创建）
 - 边界：id 重复、id 不存在、删除最后一个
 - 加载后行为：load_config → CRUD → 再 load，验证持久化生效
@@ -294,15 +294,49 @@ def test_legacy_cron_tick_seconds_is_ignored_and_warned_once(
     assert caplog.text.count("已忽略废弃配置 cron.tick_seconds") == 1
 
 
-def test_persist_never_writes_api_key_plaintext(cfg: Config, tmp_yaml: Path):
-    """即便 profile 的 api_key 已加载到内存，yaml 中也不应出现明文。"""
-    # alpha 已从 env 加载到 api_key="sk-alpha"
+def test_persist_writes_api_key_plaintext_and_reloads_from_yaml(
+    cfg: Config, tmp_yaml: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """已加载的密钥写入 YAML 后，即使 env 缺失也能在重启后恢复。"""
     assert cfg.model_profiles["alpha"].api_key == "sk-alpha"
     cfg.persist_model_profiles()
 
     text = tmp_yaml.read_text(encoding="utf-8")
-    assert "sk-alpha" not in text
-    assert "api_key:" not in text  # 整体不应有 api_key 字段
+    assert "api_key: sk-alpha" in text
+    monkeypatch.delenv("ALPHA_KEY", raising=False)
+    cfg2 = load_config(config_path=str(tmp_yaml))
+    assert cfg2.model_profiles["alpha"].api_key == "sk-alpha"
+
+
+def test_yaml_api_key_wins_over_crew_home_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    config_path = tmp_path / "config.yaml"
+    crew_home = tmp_path / ".crew"
+    crew_home.mkdir()
+    (crew_home / ".env").write_text("ALPHA_KEY=legacy-env-key\n", encoding="utf-8")
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "llm": {
+                    "models": {
+                        "alpha": {
+                            "api_key": "yaml-key",
+                            "api_key_env": "ALPHA_KEY",
+                            "model": "alpha-model",
+                        },
+                    },
+                },
+                "runtime": {"crew_home": str(crew_home)},
+            },
+            allow_unicode=True,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("CREW_HOME", raising=False)
+    monkeypatch.delenv("ALPHA_KEY", raising=False)
+
+    cfg = load_config(config_path=str(config_path))
+
+    assert cfg.model_profiles["alpha"].api_key == "yaml-key"
 
 
 def test_persist_atomic_via_tmp(cfg: Config, tmp_yaml: Path):

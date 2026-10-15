@@ -1980,27 +1980,9 @@ class CrewApp:
 
     # ---- 模型 profile CRUD（运行时增删改 + 持久化 + Provider 同步）----
     #
-    # 与 use_model 共享副作用路径：写 yaml → 写 env（仅当传 api_key）→ 改 cfg →
+    # 与 use_model 共享副作用路径：写入 YAML（包含 API Key）→ 改 cfg →
     # 激活模型变动时重建 Provider + 清缓存。CRUD 是配置层动作，不切换激活模型，
     # 但删除激活模型时自动切到剩余的第一个（按用户决策）。
-    def _apply_api_key_to_env(
-        self,
-        api_key_env: str,
-        api_key: str,
-        *,
-        owner_account_id: str = "",
-    ) -> str:
-        """把用户填写的 api_key 写入 .env，返回实际 env 文件路径。
-
-        - api_key_env 必须是合法模型 API Key 环境变量名；非法时抛 ValueError。
-        - owner 私有 key 只写 owner .env，不再同步全局进程环境，避免跨账号串线。
-        """
-        api_key_env = _validate_model_api_key_env(api_key_env)
-        env_path = resolve_writable_env_path(owner_account_id)
-        write_env_key(env_path, api_key_env, api_key, sync_process_env=not bool(owner_account_id))
-        log.info("已写入 API Key 到 .env (var=%s, file=%s)", api_key_env, env_path)
-        return str(env_path)
-
     def add_model(self, payload: dict, *, owner_account_id: str = "") -> ModelProfile:
         """新增模型 profile 并持久化。
 
@@ -2009,7 +1991,7 @@ class CrewApp:
                 id: 必填,
                 name, base_url, model, api_key_env, temperature,
                 max_tokens, context_window, timeout: 选填,
-                api_key: 选填明文 key，提供则写入 .env
+                api_key: 选填明文 key，提供则写入模型 YAML
             }
 
         Raises:
@@ -2029,16 +2011,10 @@ class CrewApp:
         api_key_env = _validate_model_api_key_env(payload.get("api_key_env") or "CREW_API_KEY")
         payload = {**payload, "api_key_env": api_key_env, "builtin": False}
         api_key = str(payload.get("api_key") or "")
-        # 先写 env（让 _build_profile_from_payload 能从 os.environ 取到），再构建 profile
-        if api_key:
-            self._apply_api_key_to_env(
-                api_key_env,
-                api_key,
-                owner_account_id=owner_account_id,
-            )
         if owner:
             profile = _build_profile_from_payload(model_id, payload)
-            profile.api_key = api_key or cfg.owner_env_map(owner).get(api_key_env, "")
+            if not api_key:
+                profile.api_key = cfg.owner_env_map(owner).get(api_key_env, "")
             profiles = cfg.owner_model_profiles(owner)
             profiles[model_id] = profile
             activate_new_model = bool(
@@ -2066,7 +2042,7 @@ class CrewApp:
 
         Raises:
             KeyError: model_id 不存在。
-            ValueError: env 写入失败；yaml 写回失败。
+            ValueError: YAML 写回失败。
         """
         cfg = self.config
         owner = str(owner_account_id or "").strip()
@@ -2088,17 +2064,15 @@ class CrewApp:
             payload = {**payload, "api_key_env": api_key_env}
         payload = {**payload, "builtin": profiles[model_id].builtin}
         api_key = str(payload.get("api_key") or "")
-        if api_key:
-            self._apply_api_key_to_env(
-                api_key_env,
-                api_key,
-                owner_account_id=owner_account_id,
-            )
         if owner:
             current = profiles[model_id]
+            preserved_key = current.api_key
+            if "api_key_env" in payload and api_key_env != current.api_key_env:
+                preserved_key = cfg.owner_env_map(owner).get(api_key_env, "")
             merged = {
                 "id": model_id,
                 "name": payload.get("name", current.name),
+                "api_key": api_key or preserved_key,
                 "api_key_env": payload.get("api_key_env", current.api_key_env),
                 "provider": payload.get("provider", current.provider),
                 "base_url": payload.get("base_url", current.base_url),
@@ -2112,10 +2086,6 @@ class CrewApp:
                 "capabilities": payload.get("capabilities", list(current.capabilities)),
             }
             profile = _build_profile_from_payload(model_id, merged)
-            if api_key:
-                profile.api_key = api_key
-            else:
-                profile.api_key = cfg.owner_env_map(owner).get(profile.api_key_env, "")
             profiles[model_id] = profile
             cfg.persist_owner_model_profiles(owner, profiles, active_model_id=cfg.owner_active_model_id(owner))
             self.agents.drop_owner(owner)

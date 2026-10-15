@@ -1,4 +1,4 @@
-"""配置加载：.env (敏感信息) + config.yaml (结构化配置)，env 优先。
+"""配置加载：config.yaml 保存结构化配置与模型 API Key，.env 保留旧配置回退支持。
 
 不配 LLM key 时 has_llm_key=False，上层会自动回退到 FakeProvider，保证流程可跑通。
 """
@@ -149,9 +149,9 @@ class ModelProfile:
             return ""
         return "****" if len(k) <= 8 else f"{k[:4]}****"  # 只露前缀，不晒末尾
 
-    def public_dict(self) -> dict[str, Any]:
-        """返回给前端的非敏感信息。"""
-        return {
+    def public_dict(self, *, include_api_key: bool = False) -> dict[str, Any]:
+        """返回模型 profile 信息；仅设置配置响应可选择包含明文 API Key。"""
+        data = {
             "id": self.id,
             "name": self.label,
             "model": self.model,
@@ -169,6 +169,9 @@ class ModelProfile:
             "builtin": self.builtin,
             "capabilities": list(self.capabilities),
         }
+        if include_api_key:
+            data["api_key"] = self.api_key
+        return data
 
 
 def is_placeholder_model_profile(profile: ModelProfile | None) -> bool:
@@ -410,8 +413,8 @@ class Config:
         - 基础 ``config.yaml`` 中加载的模型始终视为共享内置模型
         - owner overlay 中的模型始终视为 owner 私有模型
 
-        内置模型的 API Key 优先从 owner 私有 ``.env`` 解析；单用户本地 owner
-        与 dev 开发 owner也可读取进程环境，方便通过环境变量直接配置开源版。
+        基础 YAML 中显式保存的 Key 优先；缺失时再从 owner 私有 ``.env`` 解析。
+        单用户本地 owner 与 dev 开发 owner 也可读取进程环境。
         """
         env_map = self.owner_env_map(owner_account_id)
         fallback_global = self._owner_builtin_allows_global_key_fallback(owner_account_id)
@@ -420,10 +423,8 @@ class Config:
             if not profile.builtin:
                 continue
             builtin = replace(profile)
-            builtin.api_key = _lookup_api_key(
-                builtin.api_key_env,
-                env_map,
-                fallback_global=fallback_global,
+            builtin.api_key = builtin.api_key or _lookup_api_key(
+                builtin.api_key_env, env_map, fallback_global=fallback_global
             )
             profiles[model_id] = builtin
 
@@ -630,23 +631,20 @@ class Config:
     # 设计要点：
     # 1. yaml 写回：使用 PyYAML 整体重写 config.yaml。这会丢失原注释（PyYAML 固有限制），
     #    但保证结构稳定、字段顺序可读。引入 ruamel.yaml 仅为此功能会破坏最小依赖原则。
-    # 2. yaml 中只写非敏感字段（name/api_key_env/base_url/model/temperature/max_tokens/
-    #    context_window/timeout）。API Key 明文不会进入 yaml，只会被写入 .env。
-    # 3. .env 写入：单独函数处理（_write_env_key），按"已存在则替换该行，否则追加"策略，
-    #    写完同步 os.environ 让当前进程立即可用。
-    # 4. 边界：删除最后一个模型禁止（409）；删除激活模型由调用方负责切换激活。
+    # 2. profile 字段（包括 API Key）统一写入对应 YAML，重启后直接恢复。
+    # 3. 边界：删除最后一个模型禁止（409）；删除激活模型由调用方负责切换激活。
     def add_model(self, profile_data: dict[str, Any]) -> ModelProfile:
         """新增一个模型 profile。
 
         Args:
             profile_data: 必须含 id；其它字段缺省时取 ModelProfile 默认值。
-                          可选 api_key（明文）：若提供则写入 .env（按 api_key_env 名）。
+                          可选 api_key（明文）：若提供则写入 YAML。
 
         Returns:
             新建的 ModelProfile。
 
         Raises:
-            ValueError: id 为空或已存在；或写回失败。
+            ValueError: id 为空或已存在。
         """
         model_id = str(profile_data.get("id") or "").strip()
         if not model_id:
@@ -654,7 +652,6 @@ class Config:
         if model_id in self.model_profiles:
             raise ValueError(f"模型 id 已存在: {model_id}")
 
-        # 构建 profile（不含 api_key；key 由调用方处理 env 写入）
         profile = _build_profile_from_payload(model_id, profile_data)
         self.model_profiles[model_id] = profile
         return profile
@@ -675,10 +672,20 @@ class Config:
             raise KeyError(model_id)
 
         current = self.model_profiles[model_id]
+        if profile_data.get("api_key"):
+            api_key = profile_data["api_key"]
+        elif (
+            "api_key_env" in profile_data
+            and profile_data["api_key_env"] != current.api_key_env
+        ):
+            api_key = ""
+        else:
+            api_key = current.api_key
         # 合并：原值 + 新值（dataclass 字段集合作为白名单，防止脏字段写入）
         merged = {
             "id": model_id,
             "name": profile_data.get("name", current.name),
+            "api_key": api_key,
             "api_key_env": profile_data.get("api_key_env", current.api_key_env),
             "provider": profile_data.get("provider", current.provider),
             "base_url": profile_data.get("base_url", current.base_url),
@@ -691,10 +698,8 @@ class Config:
             "builtin": profile_data.get("builtin", current.builtin),
             "capabilities": profile_data.get("capabilities", list(current.capabilities)),
         }
-        # _build_profile_from_payload 会从 os.environ[api_key_env] 取 key：
-        # - 调用方先 _apply_api_key_to_env 写入了 env → 取到新 key
-        # - api_key_env 改到不存在的变量 → 取到空串，has_key=False（反映真实状态）
-        # - 什么都不改 → 取到原值（os.environ 在 load_config 时已设置）
+        # Explicit profile keys take precedence; legacy env-only profiles retain
+        # their existing key through _build_profile_from_payload's fallback.
         profile = _build_profile_from_payload(model_id, merged)
         self.model_profiles[model_id] = profile
         return profile
@@ -1089,7 +1094,7 @@ def _model_capabilities(raw: dict[str, Any]) -> list[str]:
 
 def _build_model_profile(model_id: str, raw: dict[str, Any]) -> ModelProfile:
     api_key_env = str(raw.get("api_key_env") or "CREW_API_KEY")
-    api_key = _lookup_api_key(api_key_env, None, fallback_global=True)
+    api_key = str(raw.get("api_key") or "") or _lookup_api_key(api_key_env, None, fallback_global=True)
     capabilities = _model_capabilities(raw)
 
     return ModelProfile(
@@ -1114,7 +1119,7 @@ def _build_model_profile(model_id: str, raw: dict[str, Any]) -> ModelProfile:
 
 def _build_owner_model_profile(model_id: str, raw: dict[str, Any], env_map: dict[str, str]) -> ModelProfile:
     api_key_env = str(raw.get("api_key_env") or "CREW_API_KEY")
-    api_key = _lookup_api_key(api_key_env, env_map, fallback_global=False)
+    api_key = str(raw.get("api_key") or "") or _lookup_api_key(api_key_env, env_map, fallback_global=False)
     capabilities = _model_capabilities(raw)
     return ModelProfile(
         id=model_id,
@@ -1136,14 +1141,13 @@ def _build_owner_model_profile(model_id: str, raw: dict[str, Any], env_map: dict
 
 
 def _build_profile_from_payload(model_id: str, payload: dict[str, Any]) -> ModelProfile:
-    """从 CRUD payload 构建 ModelProfile（不解析 env，由调用方决定 key 来源）。
+    """从 CRUD payload 构建 ModelProfile。
 
     与 _build_model_profile 的区别：后者从 yaml+env 加载；前者从用户输入构建。
-    api_key 默认空串，若调用方需要从 env 注入，自行在构建后赋值。
+    Payload 中未提供 key 时回退读取旧配置里的环境变量。
     """
     api_key_env = str(payload.get("api_key_env") or "CREW_API_KEY").strip() or "CREW_API_KEY"
-    # 已存在的 env 变量沿用其值，让 update 场景保留 has_key 状态
-    api_key = _lookup_api_key(api_key_env, None, fallback_global=True)
+    api_key = str(payload.get("api_key") or "") or _lookup_api_key(api_key_env, None, fallback_global=True)
     capabilities = _model_capabilities(payload)
     return ModelProfile(
         id=model_id,
@@ -1165,10 +1169,7 @@ def _build_profile_from_payload(model_id: str, payload: dict[str, Any]) -> Model
 
 
 def _serialize_profile_for_yaml(profile: ModelProfile) -> dict[str, Any]:
-    """把 ModelProfile 序列化为 yaml 安全的 dict（不含 api_key 明文）。
-
-    明确不写 api_key 字段，让 .env 成为唯一 secret 存储位置。
-    """
+    """把 ModelProfile 序列化为 YAML 配置字段，包括 API Key 明文。"""
     data: dict[str, Any] = {
         "name": profile.name or profile.id,
         "api_key_env": profile.api_key_env,
@@ -1181,6 +1182,8 @@ def _serialize_profile_for_yaml(profile: ModelProfile) -> dict[str, Any]:
         "builtin": profile.builtin,
         "capabilities": list(profile.capabilities),
     }
+    if profile.api_key:
+        data["api_key"] = profile.api_key
     if profile.max_tokens is not None:
         data["max_tokens"] = profile.max_tokens
     if profile.context_window is not None:
@@ -1378,12 +1381,13 @@ def _load_crew_home_env_file(crew_home: str | Path | None) -> None:
 
 
 def _refresh_model_profile_keys(cfg: Config) -> None:
-    """在额外加载 .env 后刷新已构建 ModelProfile 的 api_key。"""
+    """在额外加载 .env 后为尚无 YAML 密钥的 profile 回退到环境变量。"""
     for profile in cfg.model_profiles.values():
-        api_key = os.getenv(profile.api_key_env, "") or ""
-        if not api_key and profile.api_key_env != "CREW_API_KEY":
-            api_key = os.getenv("CREW_API_KEY", "") or ""
-        profile.api_key = api_key
+        if not profile.api_key:
+            api_key = os.getenv(profile.api_key_env, "") or ""
+            if not api_key and profile.api_key_env != "CREW_API_KEY":
+                api_key = os.getenv("CREW_API_KEY", "") or ""
+            profile.api_key = api_key
 
 
 def _resolve_active_model_id(cfg: Config) -> str:
