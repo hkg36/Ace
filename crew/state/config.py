@@ -125,6 +125,7 @@ class ModelProfile:
     loaded: bool = True
     builtin: bool = False
     capabilities: list[str] = field(default_factory=lambda: ["text", "tools"])
+    shared: bool = False
 
     @property
     def label(self) -> str:
@@ -406,20 +407,26 @@ class Config:
     def owner_model_profiles(self, owner_account_id: str | None = None) -> dict[str, ModelProfile]:
         """返回 owner 可见的模型视图：全局共享模型 + owner 私有模型。
 
-        这里的 builtin/shared 只由“配置来源”决定：
-        - 基础 ``config.yaml`` 中加载的模型始终视为共享内置模型
-        - owner overlay 中的模型始终视为 owner 私有模型
+        基础 ``config.yaml`` 中加载的模型是共享模型；只有 ``default`` 是内置模型。
+        Owner overlay 中的模型覆盖同 ID 的共享模型。
 
         模型密钥只读取模型配置中的 ``api_key`` 字段。
         """
         profiles: dict[str, ModelProfile] = {}
         for model_id, profile in self.model_profiles.items():
-            if not profile.builtin:
+            if not profile.shared:
                 continue
             profiles[model_id] = replace(profile)
 
         overlay = self.owner_overlay_data(owner_account_id)
-        models = (overlay.get("llm") or {}).get("models")
+        llm = overlay.get("llm")
+        if not isinstance(llm, dict):
+            llm = {}
+        deleted_models = llm.get("deleted_models")
+        if isinstance(deleted_models, list):
+            for model_id in deleted_models:
+                profiles.pop(str(model_id), None)
+        models = llm.get("models")
         if isinstance(models, dict):
             for model_id, raw in models.items():
                 if not isinstance(raw, dict):
@@ -549,8 +556,13 @@ class Config:
             llm["models"] = {
                 model_id: _serialize_profile_for_yaml(profile)
                 for model_id, profile in model_profiles.items()
-                if not profile.builtin
+                if not profile.shared
             }
+            llm["deleted_models"] = sorted(
+                model_id
+                for model_id, profile in self.model_profiles.items()
+                if profile.shared and model_id not in model_profiles
+            )
             yaml_path.parent.mkdir(parents=True, exist_ok=True)
             tmp_path = yaml_path.with_suffix(yaml_path.suffix + ".tmp")
             with tmp_path.open("w", encoding="utf-8") as f:
@@ -1092,9 +1104,10 @@ def _build_model_profile(model_id: str, raw: dict[str, Any]) -> ModelProfile:
         timeout=_as_float(raw.get("timeout", 60.0), 60.0),
         vision="vision" in capabilities,
         loaded=_as_bool(raw.get("loaded", True), True),
-        # 基础 config.yaml 是共享配置层；是否内置不信任用户填写字段，而由来源决定。
-        builtin=True,
+        # 只有 default 是内置模型；其它全局模型仍可由 owner 编辑。
+        builtin=model_id == "default",
         capabilities=capabilities,
+        shared=True,
     )
 
 
@@ -1118,6 +1131,7 @@ def _build_owner_model_profile(model_id: str, raw: dict[str, Any]) -> ModelProfi
         loaded=_as_bool(raw.get("loaded", True), True),
         builtin=False,
         capabilities=capabilities,
+        shared=False,
     )
 
 
@@ -1145,6 +1159,7 @@ def _build_profile_from_payload(model_id: str, payload: dict[str, Any]) -> Model
         loaded=_as_bool(payload.get("loaded", True), True),
         builtin=_as_bool(payload.get("builtin", False), False),
         capabilities=capabilities,
+        shared=False,
     )
 
 

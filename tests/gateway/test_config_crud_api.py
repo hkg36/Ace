@@ -18,7 +18,7 @@ from httpx import ASGITransport, AsyncClient
 from crew.app import build_app
 from crew.core.types import Message, ToolCall
 from crew.gateway.server import create_app
-from crew.state.config import load_config
+from crew.state.config import ModelProfile, load_config
 from crew.state.home import owner_path_segment
 
 OWNER_A = "A:uid-a"
@@ -243,14 +243,14 @@ async def test_switch_model_is_owner_scoped(api, auth_headers, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_local_owner_can_manage_builtin_model(api, auth_headers):
+async def test_local_owner_can_manage_global_model(api, auth_headers):
     transport = ASGITransport(app=api)
     async with AsyncClient(transport=transport, base_url="http://test", headers=auth_headers) as client:
         update = await client.put("/api/config/models/alpha", json={"temperature": 0.2})
         delete = await client.delete("/api/config/models/alpha")
 
     assert update.status_code == 200
-    assert update.json()["profile"]["builtin"] is True
+    assert update.json()["profile"]["builtin"] is False
     assert delete.status_code != 403
 
 
@@ -467,8 +467,42 @@ async def test_update_model_success(api, auth_headers):
     assert resp.status_code == 200, resp.text
     data = resp.json()
     assert data["profile"]["id"] == "alpha"
+    assert data["profile"]["builtin"] is False
     # 拿不到 temperature（public_dict 有），验证一下
     assert data["profile"]["temperature"] == 0.1
+    assert api.state.crew.owner_model_profiles(OWNER_A)["alpha"].base_url == "https://new.example.com/v1"
+
+
+@pytest.mark.asyncio
+async def test_only_default_config_model_is_builtin(api, auth_headers):
+    api.state.crew.config.model_profiles["default"] = ModelProfile(
+        id="default",
+        name="Default",
+        model="default",
+        builtin=True,
+        shared=True,
+    )
+    transport = ASGITransport(app=api)
+    async with AsyncClient(transport=transport, base_url="http://test", headers=auth_headers) as client:
+        resp = await client.get("/api/config")
+
+    assert resp.status_code == 200
+    profiles = {item["id"]: item for item in resp.json()["model_profiles"]}
+    assert profiles["default"]["builtin"] is True
+    assert profiles["alpha"]["builtin"] is False
+
+
+@pytest.mark.asyncio
+async def test_deleting_shared_model_only_hides_it_for_current_owner(api, auth_headers):
+    transport = ASGITransport(app=api)
+    async with AsyncClient(transport=transport, base_url="http://test", headers=auth_headers) as client:
+        await client.put("/api/config/models/beta", json={"loaded": True})
+        deleted = await client.delete("/api/config/models/alpha")
+        another_owner_profiles = api.state.crew.config.owner_model_profiles("B:uid-b")
+
+    assert deleted.status_code == 200, deleted.text
+    assert "alpha" not in {item["id"] for item in deleted.json()["model_profiles"]}
+    assert "alpha" in another_owner_profiles
 
 
 @pytest.mark.asyncio
