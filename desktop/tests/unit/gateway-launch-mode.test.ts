@@ -18,11 +18,13 @@ describe('resolveGatewayIdentityMode', () => {
 });
 
 describe('Gateway launch policy', () => {
-  it('keeps local mode on the normal environment and allows verified Gateway reuse', () => {
+  it('runs a private local-auth Gateway for normal desktop launches', () => {
     expect(resolveGatewayCrewHome('local', 'C:/local-home', 'C:/dev-home'))
       .toBe('C:/local-home');
-    expect(managedGatewayModeEnv('local', 'C:/dev-home')).toEqual({});
-    expect(shouldProbeExternalGateway('local')).toBe(true);
+    expect(managedGatewayModeEnv('local', 'C:/dev-home')).toEqual({
+      CREW_AUTH_MODE: 'local',
+    });
+    expect(shouldProbeExternalGateway('local')).toBe(false);
   });
 
   it('isolates dev fallback and requires its managed Gateway', () => {
@@ -31,6 +33,7 @@ describe('Gateway launch policy', () => {
     expect(managedGatewayModeEnv('dev', 'C:/dev-home')).toEqual({
       CREW_GATEWAY_DEV: '1',
       CREW_HOME: 'C:/dev-home',
+      CREW_AUTH_MODE: 'local',
     });
     expect(shouldProbeExternalGateway('dev')).toBe(false);
   });

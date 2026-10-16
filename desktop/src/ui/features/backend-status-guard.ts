@@ -4,7 +4,7 @@
  * 监听主进程推送的 `backend:status` IPC 事件（周期健康检查 /api/health），
  * 当后端不可用时展示全局遮罩阻断用户操作，恢复后自动隐藏。
  *
- * 与 auth-gate（登录墙）正交：登录墙管身份，此守卫管后端服务可用性。
+ * 身份认证不参与此守卫；它只负责后端服务可用性。
  *
  * 慢启动容错：遮罩持续超过 SLOW_THRESHOLD_MS 后，从「光秃秃转圈」升级为
  * 「仍在准备中（已等 Ns）+ 查看日志 / 重试 / 继续等待」，把无限静默转圈变成
@@ -147,7 +147,7 @@ function showLogHint(text: string): void {
 }
 
 /**
- * gateway 晚于登录 hydrate 就绪时：补连 WS 并重拉配置。
+ * gateway 晚于渲染层初始化就绪时：补连 WS 并重拉配置。
  * 失败吞掉——下一次 backend:status / socket 自重连会再试。
  */
 async function recoverAfterBackendConnected(): Promise<void> {
@@ -195,14 +195,14 @@ export function initBackendStatusGuard(): void {
       : '';
     if (warning && warning !== lastComponentWarning) notify(warning);
     lastComponentWarning = warning;
-    // 假阴性恢复：冷启动时登录 hydrate 打到未就绪 gateway，配置/WS 会空着；
+    // 假阴性恢复：冷启动时初始化请求打到未就绪 gateway，配置/WS 会空着；
     // health 转正后补一次，避免一直「服务未连接」。
     if (connected && !wasConnected) {
       void recoverAfterBackendConnected();
     }
   };
 
-  // reload 后 did-finish-load 可能早于 renderer 完成认证恢复，那次推送会丢失。
+  // reload 后 did-finish-load 可能早于 renderer 订阅，那次推送会丢失。
   // 先订阅后立即读一次主进程快照，保证已就绪时遮罩不会永久停留。
   window.Crew?.onBackendStatus?.(applyStatus);
   void window.Crew?.getBackendStatus?.().then(applyStatus).catch(() => {

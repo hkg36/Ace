@@ -99,7 +99,6 @@ import {
 
 } from '../state';
 
-import { isRendererLoggedIn, requireRendererLogin } from './auth-gate';
 import { openSessionActionsMenu } from './session-actions';
 import { showConfirmDialog } from '../ui-feedback';
 
@@ -757,7 +756,6 @@ export function canSwitchComposerWorkspace(): boolean {
  */
 export function ensureComposerDraftSession(openSession: OpenSessionFn = openSessionWrapper): string {
   if (state.activeSessionId) return state.activeSessionId;
-  if (!requireRendererLogin()) return '';
   return createSessionInWorkspace(composerWorkspaceId(), openSession);
 }
 
@@ -956,7 +954,6 @@ export function commitDraftSession(
 
 export function createSessionInWorkspace(workspaceId: string, openSession: OpenSessionFn): string {
 
-  if (!requireRendererLogin()) return '';
 
   const seedModel = modelIdForNewCrewSession();
 
@@ -1075,7 +1072,6 @@ function focusVisibleWorkspace(workspace: Workspace, openSession: OpenSessionFn)
 export async function createWorkspaceFromFolderPicker(
   openSession: OpenSessionFn,
 ): Promise<string | void> {
-  if (!requireRendererLogin('请先登录后再创建工作空间')) return;
   const selectFolder = window.Crew?.selectFolder;
   if (!selectFolder) {
     notify('请在桌面客户端中使用「新建工作空间」以选择本地文件夹');
@@ -1121,7 +1117,6 @@ export async function createWorkspaceFromFolderPicker(
 
 export async function loadWorkspaces(): Promise<void> {
 
-  if (!isRendererLoggedIn()) return;
 
   // 标记进入加载、清掉旧的错误态（让 UI 不再显示「加载失败」banner）
   historyLoadError.workspaces = null;
@@ -1147,7 +1142,6 @@ export async function loadWorkspaces(): Promise<void> {
  *  现有调用方在 [session-controller.ts:400](Ace/desktop/src/ui/features/session-controller.ts#L400)（Promise.all 里），
  *  这里提供一个同款 try-catch 包装让调用方用，不重写主调用链。 */
 export async function loadSessionsList(): Promise<BackendSession[]> {
-  if (!isRendererLoggedIn()) return [];
   historyLoadError.sessions = null;
   try {
     const list = await backendApi.sessions(undefined, { includeArchived: true });
@@ -1205,7 +1199,6 @@ export function refreshSidebarAfterHydrate(openSession: OpenSessionFn): void {
 
 export async function refreshAllSessions(): Promise<void> {
 
-  if (!isRendererLoggedIn()) return;
 
   try {
 
@@ -1227,7 +1220,6 @@ export async function relinkWorkspaceFromFolderPicker(
   workspaceId: string,
   openSession: OpenSessionFn = openSessionWrapper,
 ): Promise<string | void> {
-  if (!requireRendererLogin('请先登录后再关联工作空间目录')) return;
   const selectFolder = window.Crew?.selectFolder;
   if (!selectFolder) {
     notify('请在桌面客户端中选择本地文件夹');
@@ -1316,7 +1308,7 @@ let workspaceDialog: {
 } | null = null;
 
 export function openWorkspaceModal(workspace: Workspace | null): void {
-  if (!requireRendererLogin('请先登录后再管理工作空间') || !workspace?.id) return;
+  if (!workspace?.id) return;
   workspaceDialog?.handle.close();
   const host = document.createElement('div');
   const view = createWorkspaceView(

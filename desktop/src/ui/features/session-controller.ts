@@ -57,7 +57,6 @@ import { getLastGatewaySequences } from './gateway-sequence';
 import { resetSessionExcept } from '../stream-reassembly';
 import { syncSessionLiveFromBackend } from './session-busy';
 import { startStreamWatchdog } from './stream-watchdog';
-import { isRendererLoggedIn, requireRendererLogin } from './auth-gate';
 import { logStream } from '../stream-debug';
 import { sessionStore } from '../stores/stores';
 import { hydrateTurnFoldFromStorage } from './fold-state';
@@ -73,7 +72,6 @@ export async function openSession(
   sessionId: string,
   options: { activateChat?: boolean } = {},
 ): Promise<void> {
-  if (!requireRendererLogin()) return;
   discardDraft();
   // 重新打开会话会重载消息，清掉可能残留的编辑态（避免 editFromIdx 指向失效下标）
   setEditFrom(sessionId, null);
@@ -168,7 +166,6 @@ export function sessionsAffectedByDisconnect(): string[] {
 const historyLoadSeq = new Map<string, number>();
 
 export async function loadBackendHistory(sessionId: string): Promise<void> {
-  if (!isRendererLoggedIn()) return;
   const loadSeq = (historyLoadSeq.get(sessionId) ?? 0) + 1;
   historyLoadSeq.set(sessionId, loadSeq);
   const isLatestLoad = () => historyLoadSeq.get(sessionId) === loadSeq;
@@ -370,7 +367,6 @@ function bindChannelSessionListener(): void {
 
 export function bootstrapBackend(): void {
   bindChannelSessionListener();
-  if (!isRendererLoggedIn()) return;
   state.socket?.dispose();
   state.socket = new BackendChatSocket(
     (chunk) => applyChunk(chunk),
@@ -424,7 +420,6 @@ export function bootstrapBackend(): void {
 }
 
 export async function hydrateBackendState(): Promise<void> {
-  if (!isRendererLoggedIn()) return;
   // 各路后端加载相互隔离：任一路失败不阻断其余，也不再让 sessions 挂掉连累 workspaces。
   // loadSessionsList / loadWorkspaces 内部已自带 try-catch + 错误态（区分「加载失败 vs 真空」），
   // 这里只对没有内部容错的 loadConfig/loadChannelSessions 包一层。

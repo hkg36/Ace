@@ -19,7 +19,6 @@ import {
   truncateMessagesFrom,
 } from '../state';
 import { messageStore, sessionStore } from '../stores/stores';
-import { requireRendererLogin } from './auth-gate';
 import {
   renderAttachmentList,
   type PanelAttachments,
@@ -99,7 +98,6 @@ export function createMainComposerActions(
 ): ConversationPanelActions {
   return {
     submit: async (text) => {
-      if (!requireRendererLogin()) return;
       const sessionId = state.activeSessionId;
       if (sessionId && state.editFromIdx[sessionId] != null) {
         const removed = truncateMessagesFrom(sessionId, state.editFromIdx[sessionId]);

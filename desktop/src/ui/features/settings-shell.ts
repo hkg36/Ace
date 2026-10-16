@@ -1,7 +1,6 @@
 import { createIcon, MONOCHROME_ICON_CLASS, type IconId } from '../components/icon';
 
 const SETTINGS_NAVIGATION: ReadonlyArray<{ id: string; label: string; icon: IconId }> = [
-  { id: 'account', label: '账户', icon: 'icon-agent' },
   { id: 'general', label: '通用', icon: 'icon-settings' },
   { id: 'model', label: '模型', icon: 'process-thinking' },
   { id: 'proxy', label: '代理', icon: 'process-web' },
@@ -128,9 +127,7 @@ export function createSettingsShell(options: {
   element.addEventListener('click', handleOverlay);
   close.addEventListener('click', options.onClose);
   document.addEventListener('keydown', handleKeydown);
-  setActivePane(options.panes.some((pane) => pane.id === 'settings-pane-account')
-    ? 'account'
-    : paneIds.values().next().value ?? '');
+  setActivePane(paneIds.values().next().value ?? '');
 
   return {
     element,

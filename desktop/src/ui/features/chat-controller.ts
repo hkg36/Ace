@@ -73,7 +73,6 @@ import {
   resumeSessionGeneration,
 } from './session-busy';
 import { clearScenarioChip, takeArmedSubScenario } from './scenario-arm';
-import { requireRendererLogin } from './auth-gate';
 import {
   formatFollowupAnswerMessage,
   isRuntimeStaffingFollowup,
@@ -1512,7 +1511,6 @@ export async function dispatchWs(
     },
   };
   const subScenario = dispatchOptions.subScenario ?? '';
-  if (!requireRendererLogin()) return false;
   if (isDraftSession(sessionId)) {
     await persistDraftSessionModel(sessionId);
   }
@@ -1612,7 +1610,6 @@ export async function dispatchWs(
 }
 
 export async function sendMessage(text: string): Promise<void> {
-  if (!requireRendererLogin()) return;
   const plainContent = text.trim();
   const attachments = state.attachments;
   const activeHasAnnotations = state.activeSessionId
@@ -1834,7 +1831,6 @@ export function steerQueuedItem(sessionId: string, index: number): void {
 }
 
 export function steerGeneration(text: string): void {
-  if (!requireRendererLogin()) return;
   const sessionId = state.activeSessionId;
   const t = text.trim();
   if (!sessionId || !t) return;
@@ -1861,7 +1857,6 @@ export function subscribeSessions(sessionIds: string[]): void {
 }
 
 export async function refreshSessions(): Promise<void> {
-  if (!requireRendererLogin()) return;
   await refreshAllSessions();
   const { loadChannelSessions } = await import('./channel-sessions');
   await loadChannelSessions();

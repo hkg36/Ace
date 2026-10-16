@@ -71,8 +71,6 @@ import {
 import { mountSessionHistoryView } from './features/session-history-view';
 import { bindSettingsUi, registerConfigPaneRenderers } from './features/settings';
 import { mountSettingsDataPanes } from './features/settings-data';
-import { requireRendererLogin } from './features/auth-gate';
-import { initAuthFlow } from './features/login';
 import { initBackendStatusGuard, isBackendConnected, isBackendInitBypassActive, sealBackendInitBypass } from './features/backend-status-guard';
 import { bindHistoryPanelToggle, applyHistoryCollapsed } from './features/history-collapse';
 import { bindInspectorUi, openInspectorToTab, refreshInspector, setPlanBoardActions } from './features/inspector';
@@ -216,7 +214,6 @@ function resetExpertForNewSession(): void {
 }
 
 function startNewChat(): void {
-  if (!requireRendererLogin()) return;
   resetExpertForNewSession();
   createSessionInWorkspace('default', openSession);
   setTab('chat');
@@ -258,7 +255,6 @@ function bindGlobalEvents(): () => void {
   document.querySelectorAll('.conn-row[data-channel]').forEach((card) => {
     on(card, 'click', (e) => {
       if ((e.target as HTMLElement).closest('[data-channel-toggle]')) return;
-      if (!requireRendererLogin('请先登录后再配置渠道')) return;
       const channel = card.getAttribute('data-channel') || 'feishu';
       openChannelModal(channel);
     });
@@ -267,7 +263,6 @@ function bindGlobalEvents(): () => void {
   document.querySelectorAll('[data-channel-toggle]').forEach((btn) => {
     on(btn, 'click', (e) => {
       e.stopPropagation();
-      if (!requireRendererLogin('请先登录后再操作渠道')) return;
       const channel = btn.getAttribute('data-channel-toggle') || '';
       if (!channel) return;
       void toggleChannelConnection(channel).catch((error) => notify(`渠道操作失败：${(error as Error).message}`));
@@ -583,9 +578,6 @@ async function init(
   await safe('initSystemTrayStatus', () => {
     registerDispose(initSystemTrayStatus());
   });
-  // 认证流程：email/remote 模式下在首屏前判定登录态，未登录则展示登录墙。
-  // local/dev 模式下 isLoggedIn 恒为 true，不显示登录墙，直接放行。
-  await safe('initAuthFlow', async () => { await initAuthFlow(); });
   // 把 openSession / setTab 注入 chat-controller + session-controller，破除循环依赖
   // （语义等价于抽离前这些顶层函数直接互相调用）。
   await safe('setChatCallbacks', () => setChatCallbacks({ openSession, setTab }));
@@ -614,6 +606,9 @@ async function init(
   renderWorkspaceHistory(openSession);
   renderChat();
   updateGatewayDot();
+  await safe('rendererInitialStateReady', async () => {
+    await window.Crew.rendererInitialStateReady();
+  });
   // 冷启动：当前会话若已有内存消息，补一次文件改动对账（清幽灵临时文件卡）
   const bootSid = state.activeSessionId;
   if (bootSid && getMessages(bootSid).length > 0) {
@@ -637,8 +632,6 @@ async function init(
     onSessionAgentAssigned: assignSessionAgentDisplay,
   }));
   void safe('initSkillsPage', initSkillsPage);
-  // 登录墙已由 initAuthFlow 在 Phase 1 处理：local/dev 模式直接放行，
-  // email/remote 模式未登录时登录墙覆盖全部 UI，登录后 reload 重新初始化。
   await safe('bootstrapBackend', bootstrapBackend);
   void safe('hydrateBackendState', hydrateBackendState);
 }

@@ -226,6 +226,16 @@ def test_auth_base_url_environment_override(tmp_path, monkeypatch):
     assert config.auth_base_url == "https://login.example"
 
 
+def test_auth_mode_environment_override(tmp_path, monkeypatch):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("auth:\n  mode: remote\n", encoding="utf-8")
+    monkeypatch.setenv("CREW_AUTH_MODE", "local")
+
+    config = load_config(config_path=config_path)
+
+    assert config.auth_mode == "local"
+
+
 def test_email_auth_mode_loads_from_config(tmp_path):
     config_path = tmp_path / "config.yaml"
     config_path.write_text("auth:\n  mode: email\n", encoding="utf-8")

@@ -183,11 +183,8 @@ let trayService: TrayService | null = null;
 
 // Renderer readiness reveal-gate.
 //
-// Default state is "open" (rendererInitialStateReady=true) so HEAD's existing
-// show-on-ready-to-show behavior is unchanged. When the email-tenant-auth
-// re-port wires resetRendererRevealGate() into createWindow(), the gate closes
-// on cold start and reopens when the renderer signals app:renderer-initial-state-ready
-// (or when RENDERER_READY_FALLBACK_MS elapses as a safety net).
+// Keep the existing first-show behavior, then wait for the renderer to build its
+// initial UI after navigation before revealing the window.
 let rendererInitialStateReady = true;
 let nativeWindowReady = false;
 let windowShowRequested = true;
@@ -349,12 +346,8 @@ function gatewayIdentityHeaders(): Record<string, string> | null {
   return { Cookie: cookie };
 }
 
-function currentBrowserOwnerId(): string | null {
-  if (usesDevGatewayIdentity()) return 'dev:dev';
-  if (!loginNewServiceInstance.getSessionInfo().isLoggedIn) return null;
-  // owner 形如 `<providerId>:<userId>`（remote/email），local 模式为 'local'。
-  // 与 crew.gateway.auth 的 LOCAL_OWNER_ACCOUNT_ID / owner_account_id 对齐。
-  return loginNewServiceInstance.ownerAccountId() ?? 'local';
+function currentBrowserOwnerId(): string {
+  return usesDevGatewayIdentity() ? 'dev:dev' : 'local';
 }
 
 function currentBrowserRuntimeKey(): string | null {
@@ -931,7 +924,7 @@ function setTrayStatus(status: TrayStatus): void {
 
 function pushSessionState(): void {
   if (usesDevGatewayIdentity()) {
-    // 开发态：推送合成的已登录开发账号状态，让渲染进程登录墙不弹出。
+    // Keep the legacy session-state IPC snapshot consistent in development.
     mainWindow?.webContents.send('auth:session-state', {
       mode: 'dev',
       configured: true,
@@ -1177,11 +1170,7 @@ function createWindow() {
     browserHost?.hidePanel();
     resetRendererRevealGate();
   });
-  // Cold-start session-state push. This MUST be registered inside
-  // createWindow() (after `mainWindow` is assigned) — previously it lived in
-  // registerIpc() which runs at bootstrap BEFORE createWindow(), so
-  // `mainWindow` was null there and the optional chaining silently no-op'd,
-  // meaning the auth:session-state push the renderer relies on never fired.
+  // Push initial backend status after the renderer loads.
   mainWindow.webContents.on('did-finish-load', () => {
     pushSessionState();
     // Push current backend health status on load so the renderer knows immediately
@@ -1203,10 +1192,6 @@ function createWindow() {
   mainWindow.on('close', (event) => {
     if (isQuitting) return;
     if (!mainWindow) return;
-    if (!loginNewServiceInstance.getSessionInfo().isLoggedIn) {
-      isQuitting = true;
-      return;
-    }
     if (!mainWindow.isVisible()) return;
     if (shouldPreventClose()) {
       event.preventDefault();
@@ -1450,6 +1435,7 @@ function startWindowsPackagedGateway(port: number): void {
         ...process.env,
         CREW_HOME: resolveCrewHome(),
         GATEWAY_PORT: String(port),
+        CREW_AUTH_MODE: 'local',
         ...packagedSecurityRuntimeEnv(),
         // 与开发态一致：打包 exe 内嵌 Python 仍可能走 GBK 控制台
         PYTHONIOENCODING: 'utf-8',
@@ -1532,6 +1518,7 @@ function startMacOSPackagedGateway(port: number): void {
         ...process.env,
         CREW_HOME: resolveCrewHome(),
         GATEWAY_PORT: String(port),
+        CREW_AUTH_MODE: 'local',
         ...packagedSecurityRuntimeEnv(),
       },
     });
@@ -1590,6 +1577,7 @@ function startLinuxPackagedGateway(port: number): void {
         ...process.env,
         CREW_HOME: resolveCrewHome(),
         GATEWAY_PORT: String(port),
+        CREW_AUTH_MODE: 'local',
         ...packagedSecurityRuntimeEnv(),
       },
     });

@@ -17,8 +17,8 @@ export function managedGatewayModeEnv(
   devHome: string,
 ): Record<string, string> {
   return mode === 'dev'
-    ? { CREW_GATEWAY_DEV: '1', CREW_HOME: devHome }
-    : {};
+    ? { CREW_GATEWAY_DEV: '1', CREW_HOME: devHome, CREW_AUTH_MODE: 'local' }
+    : { CREW_AUTH_MODE: 'local' };
 }
 
 /**
@@ -33,7 +33,7 @@ export function resolveGatewayCrewHome(
   return mode === 'dev' ? devHome : accountHome;
 }
 
-/** Only an account-mode Desktop may reuse a Gateway with unknown dev settings. */
-export function shouldProbeExternalGateway(mode: GatewayIdentityMode): boolean {
-  return mode === 'local';
+/** The Desktop owns a local Gateway so stale auth modes cannot block local requests. */
+export function shouldProbeExternalGateway(_mode: GatewayIdentityMode): boolean {
+  return false;
 }

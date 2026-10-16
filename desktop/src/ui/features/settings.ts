@@ -22,8 +22,6 @@ import {
 import { bindSessionPreviewModal } from './session-preview-modal';
 import { bindContactModal, closeContactModal, openContactModal } from './settings-contact';
 import { $, notify } from '../state';
-import { requireRendererLogin } from './auth-gate';
-import { renderAuthAccount } from './login';
 import {
   DEFAULT_SETTINGS,
   clampNumber,
@@ -447,7 +445,7 @@ function bindControls(): void {
   // 数据 Tab 操作
   document.getElementById('set-clear-cache')?.addEventListener('click', () => {
     try {
-      // 仅清缓存类 key，保留 settings/login
+      // 仅清缓存类 key，保留应用设置。
       Object.keys(localStorage)
         .filter((k) => k.startsWith('crew.cache.') || k.startsWith('crew.draft.'))
         .forEach((k) => localStorage.removeItem(k));
@@ -458,7 +456,6 @@ function bindControls(): void {
   });
 
   document.getElementById('set-export-sessions')?.addEventListener('click', async () => {
-    if (!requireRendererLogin()) return;
     const btn = document.getElementById('set-export-sessions') as HTMLButtonElement | null;
     if (btn) btn.disabled = true;
     try {
@@ -550,9 +547,6 @@ export function registerConfigPaneRenderers(r: {
 }
 
 function onSettingsPaneOpened(pane: string): void {
-  if (pane === 'account') {
-    renderAuthAccount();
-  }
   if (pane === 'model' && configRenderers) void configRenderers.renderConfigModels();
   if (pane === 'channel' && configRenderers) void configRenderers.renderPlatforms();
   if (pane === 'sys-logs') {
@@ -587,13 +581,7 @@ export function bindSettingsUi(): void {
   window.addEventListener('pagehide', disposeSettingsLibraryPane, { once: true });
   bindSessionPreviewModal();
   bindControls();
-  setActivePane('account');
-  // 用户头像按钮：打开设置并切换到账户面板
-  window.addEventListener('user:open-account', () => {
-    openSettingsModal();
-    setActivePane('account');
-    renderAuthAccount();
-  });
+  setActivePane('general');
   // 启动时应用持久化的设置
   applyAll();
   void syncAutoStartFromSystem();

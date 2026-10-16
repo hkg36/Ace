@@ -48,7 +48,6 @@ import {
   bindFilePaste,
   type PanelAttachments,
 } from './attachments';
-import { requireRendererLogin } from './auth-gate';
 import {
   mountConversationPanel,
   type ConversationPanel,
@@ -946,7 +945,6 @@ export function mountWikiAgentPanel(root: HTMLElement, req: WikiAgentEntryReques
  * req.prompt 存在时（Home.md 推荐问题点击）直接发送该问题。
  */
 export async function openWikiAgent(req: WikiAgentEntryRequest): Promise<void> {
-  if (!requireRendererLogin('请先登录后再使用 Wiki 问答')) return;
   const kbId = req.kbId.trim();
   if (!kbId) return;
   const embeddedRoot = document.querySelector<HTMLElement>('[data-wiki-agent-panel]');

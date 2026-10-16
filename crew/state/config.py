@@ -1472,7 +1472,10 @@ def load_config(config_path: str | Path | None = None) -> Config:
                         int(remote.get("session_ttl_seconds", cfg.auth_session_ttl_seconds)),
                     ),
                 )
-        # 环境变量只覆盖认证服务地址，不改变 local/remote 模式。
+        auth_mode_env = os.getenv("CREW_AUTH_MODE", "").strip().lower()
+        if auth_mode_env in {"local", "email", "remote"}:
+            cfg.auth_mode = auth_mode_env
+        # 环境变量可单独覆盖认证模式与认证服务地址。
         auth_base_url_env = os.getenv("CREW_AUTH_BASE_URL", "").strip()
         if auth_base_url_env:
             cfg.auth_base_url = auth_base_url_env
