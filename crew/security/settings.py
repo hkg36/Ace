@@ -2,7 +2,14 @@
 
 from __future__ import annotations
 
+import sys
+
 _configured_security_enabled = False
+
+
+def sandbox_supported() -> bool:
+    """Temporarily disable the application sandbox on Windows."""
+    return sys.platform != "win32"
 
 
 def configure_security(*, enabled: bool) -> None:

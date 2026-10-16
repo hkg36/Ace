@@ -12,7 +12,7 @@ export interface SecurityCapabilities {
 
 /** 安全模块总开关：后端 /api/config 返回 security.enabled，Ace 默认关闭。 */
 export function securityModuleEnabled(config: BackendConfig | null | undefined = state.config): boolean {
-  return config?.security?.enabled === true;
+  return !isWindowsPlatform(detectedRuntimePlatform()) && config?.security?.enabled === true;
 }
 
 /** 配置加载完成后通知安全入口同步可用状态。 */

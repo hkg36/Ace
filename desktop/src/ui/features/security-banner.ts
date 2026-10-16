@@ -1,5 +1,6 @@
 /**
  * Codex 式「安装沙箱」顶部 banner。
+ * Windows 沙箱暂时停用：不显示横幅，也不启动能力轮询。
  *
  * 显隐与状态由 gateway 的 /api/security/capabilities 派生：
  *   helper_present && filesystem_sandbox  → on（隐藏）
@@ -46,6 +47,7 @@ let uacRestartRequired = false;
 
 /** 从 capabilities 派生 banner 状态。导出供单元测试覆盖网络降级分支（U3）。 */
 export function deriveState(c: SecurityCapabilities): BannerState {
+  if (isWindowsPlatform(detectedRuntimePlatform()) || isWindowsPlatform(c.platform)) return 'hidden';
   if (isMacOSPlatform(c.platform)) {
     if (!c.helper_present || c.runtime_stale || !c.filesystem_sandbox || !c.managed_network) {
       return 'mac-incomplete';
@@ -65,6 +67,12 @@ export function deriveState(c: SecurityCapabilities): BannerState {
 
 /** 拉取 capabilities 并重渲。网关不可达时不打扰（backend-status-guard 已有全屏提示）。 */
 export async function refreshSecurityBanner(): Promise<void> {
+  if (isWindowsPlatform(detectedRuntimePlatform())) {
+    current = 'hidden';
+    seeded = true;
+    renderSecurityBanner();
+    return;
+  }
   seeding = true;
   lastSeedAttempt = Date.now();
   try {
@@ -117,6 +125,11 @@ export function stopSecurityBannerRefresh(): void {
  * 周期刷新由 startSecurityBannerRefresh 维持，覆盖 gateway 晚于桌面启动等场景。
  */
 export function renderSecurityBanner(): void {
+  if (isWindowsPlatform(detectedRuntimePlatform())) {
+    stopSecurityBannerRefresh();
+    document.getElementById(BANNER_ID)?.remove();
+    return;
+  }
   const container = document.querySelector('.chat-composer');
   if (!container) return;
   const banner = ensureBanner(container);

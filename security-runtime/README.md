@@ -8,6 +8,10 @@ Ace 的**原生安全运行时**（Rust，包名 `ace-security-runtime`）。
 > 对外口径：本运行时承载 Windows 原生沙箱、Linux bubblewrap 与 macOS Seatbelt；
 > 它**共享主机内核**，是对话级隔离边界，不是防内核 0day 的强隔离（那是 Phase 3+ 的 gVisor/Firecracker）。
 
+> Windows 应用层安全沙箱目前暂时停用：即使配置启用安全模块，内建工具和外援也以当前用户权限运行，
+> 不显示安装横幅、不执行周期性原生探针，也不允许安装/修复。已有技术账户和 WFP 规则保留，可显式卸载；
+> 下文 Windows 内容描述保留的原生实现，不代表当前应用已启用防护。Linux 和 macOS 行为不变。
+
 ---
 
 ## 1. 能力总览

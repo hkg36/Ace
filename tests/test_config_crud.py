@@ -132,13 +132,19 @@ def test_load_config_defaults_security_to_disabled(tmp_path: Path):
     assert loaded.security_enabled is False
 
 
-def test_load_config_reads_enabled_security(tmp_path: Path):
+@pytest.mark.parametrize("supported", [True, False])
+def test_load_config_reads_enabled_security(tmp_path: Path, monkeypatch, supported):
+    monkeypatch.setattr("crew.security.settings.sandbox_supported", lambda: supported)
     config_path = tmp_path / "config.yaml"
-    config_path.write_text("security:\n  enabled: true\n", encoding="utf-8")
+    config_path.write_text(
+        "security:\n  enabled: true\nexternal_agents:\n  security_enabled: true\n",
+        encoding="utf-8",
+    )
 
     loaded = load_config(config_path=str(config_path))
 
-    assert loaded.security_enabled is True
+    assert loaded.security_enabled is supported
+    assert loaded.external_security_enabled is supported
 
 
 def test_add_model_rejects_empty_id(cfg: Config):

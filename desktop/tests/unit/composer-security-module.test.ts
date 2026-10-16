@@ -43,6 +43,7 @@ beforeEach(() => {
   __resetAllStoresForTest();
   document.body.innerHTML = '';
   localStorage.clear();
+  Object.assign(window, { Crew: { runtimePlatform: 'darwin' } });
 });
 
 describe('composer 安全入口与安全模块开关', () => {
@@ -64,6 +65,17 @@ describe('composer 安全入口与安全模块开关', () => {
 
     expect(chip.disabled).toBe(false);
     expect(chip.title).toBe('请求批准');
+
+    disposeToolbar();
+    disposeView();
+  });
+
+  it('Windows 即使收到启用配置也不开放沙箱模式入口', () => {
+    Object.assign(window, { Crew: { runtimePlatform: 'win32' } });
+    enableSecurityModule();
+    const { disposeToolbar, disposeView } = mountComposer();
+
+    expect(securityChip().disabled).toBe(true);
 
     disposeToolbar();
     disposeView();

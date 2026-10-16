@@ -488,6 +488,16 @@ def create_security_router(crew) -> APIRouter:
         account_from_request(request)
         from crew.security.launch import packaged_runtime_argv
 
+        if platform.system().lower() == "windows":
+            return {
+                "platform": "windows",
+                "helper_present": Path(packaged_runtime_argv()[0]).is_file(),
+                "filesystem_sandbox": False,
+                "managed_network": False,
+                "local_binding_control": False,
+                "runtime_stale": False,
+                "detail": "Windows 安全沙箱暂时停用，命令以当前用户权限执行",
+            }
         filesystem_probe, helper_present, stale, system = await _live_filesystem_runtime()
         helper_argv = packaged_runtime_argv()
         detail = "native security runtime 未随包安装"

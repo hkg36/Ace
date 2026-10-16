@@ -1672,8 +1672,11 @@ def load_config(config_path: str | Path | None = None) -> Config:
                 internal=ac.get("internal", {}) or {},
             )
 
-    from crew.security.settings import configure_security
+    from crew.security.settings import configure_security, sandbox_supported
 
+    if not sandbox_supported():
+        cfg.security_enabled = False
+        cfg.external_security_enabled = False
     configure_security(enabled=cfg.security_enabled)
 
     # config.yaml 里的 runtime.crew_home 需要等 yaml 解析后才知道；

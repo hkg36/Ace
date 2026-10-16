@@ -3413,6 +3413,9 @@ function registerIpc() {
     if (process.platform !== 'win32') {
       return { ok: false, exitCode: null, detail: '当前设备无需手动安装安全防护' };
     }
+    if (args.action !== 'uninstall') {
+      return { ok: false, exitCode: null, detail: 'Windows 安全沙箱暂时停用' };
+    }
     const runtime = app.isPackaged
       ? path.join(process.resourcesPath, 'ace-security-runtime.exe')
       : String(process.env.ACE_SECURITY_RUNTIME ?? '').trim()

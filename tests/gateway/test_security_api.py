@@ -7,6 +7,7 @@ import hmac
 import json
 import secrets
 import subprocess
+import sys
 import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -19,6 +20,8 @@ from crew.core.types import Message, ToolCall
 from crew.gateway.server import create_app
 from crew.gateway.auth import REMOTE_AUTH_COOKIE, create_remote_session_token
 from crew.security.actions import normalize_file_action
+from crew.security.context import SecurityContext
+from crew.security.launch import compile_process_launch, execute_captured, use_process_launch
 from crew.security.runtime_client import RuntimeCapabilities
 from crew.state.config import Config
 
@@ -54,6 +57,7 @@ def _remote_cookies(user_id: str) -> dict[str, str]:
 
 @pytest.fixture
 def api(tmp_path, monkeypatch):
+    monkeypatch.setattr("crew.security.settings.sandbox_supported", lambda: True)
     crew_home = tmp_path / ".crew"
     key_dir = crew_home / ".gateway-instance"
     key_dir.mkdir(parents=True, mode=0o700)
@@ -125,8 +129,25 @@ async def test_gateway_security_headers_cover_authentication_failures(api):
 
 @pytest.mark.asyncio
 async def test_conversation_mode_is_set_by_authenticated_desktop_runtime(
-    api,
+    api, monkeypatch,
 ):
+    async def available_runtime():
+        return (
+            RuntimeCapabilities(
+                backend="test",
+                filesystem_sandbox=True,
+                process_tree_cleanup=True,
+                managed_network=True,
+            ),
+            True,
+            False,
+            "darwin",
+        )
+
+    monkeypatch.setattr(
+        "crew.gateway.routers.security._live_filesystem_runtime",
+        available_runtime,
+    )
     transport = ASGITransport(app=api, client=("127.0.0.1", 12345))
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await _put_json(
@@ -139,7 +160,15 @@ async def test_conversation_mode_is_set_by_authenticated_desktop_runtime(
 
 
 @pytest.mark.asyncio
-async def test_disabled_security_forces_full_access(tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    ("configured_enabled", "supported"),
+    [(False, True), (True, False)],
+)
+@pytest.mark.parametrize("mode", ["request_approval", "auto_review", "full_access"])
+async def test_disabled_security_forces_full_access(
+    tmp_path, monkeypatch, configured_enabled, supported, mode,
+):
+    monkeypatch.setattr("crew.security.settings.sandbox_supported", lambda: supported)
     crew_home = tmp_path / ".crew"
     key_dir = crew_home / ".gateway-instance"
     key_dir.mkdir(parents=True, mode=0o700)
@@ -151,21 +180,61 @@ async def test_disabled_security_forces_full_access(tmp_path, monkeypatch):
         config=Config(
             db_path=str(tmp_path / "disabled-security.db"),
             plugins_enabled=[],
-            security_enabled=False,
+            security_enabled=configured_enabled,
+            external_security_enabled=True,
         ),
         enable_team=False,
     )
     app = create_app(crew)
+    assert crew.config.security_enabled is False
+    assert crew.security_service.security_enabled is False
+    if not supported:
+        assert crew.config.external_security_enabled is False
     transport = ASGITransport(app=app, client=("127.0.0.1", 12345))
     try:
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await _put_json(
                 client,
                 "/api/security/mode",
-                {"workspace_id": "default", "session_id": "s1", "mode": "request_approval"},
+                {"workspace_id": "default", "session_id": "s1", "mode": mode},
+            )
+            config_response = await client.get(
+                "/api/config", headers=_headers("GET", "/api/config"),
             )
         assert response.status_code == 200
         assert response.json() == {"mode": "full_access"}
+        assert config_response.status_code == 200
+        assert config_response.json()["security"] == {
+            "enabled": False,
+            "default_mode": "full_access",
+        }
+        context = SecurityContext(
+            os_user="tester",
+            owner_account_id="owner",
+            workspace_id="default",
+            workspace_root=tmp_path,
+            session_id="s1",
+            request_id="request",
+            task_id="task",
+            cwd=tmp_path,
+        )
+        launch = compile_process_launch(
+            context,
+            crew.security_service.mode_for(context),
+            db_path=Path(crew.config.db_path),
+            external_security_enabled=crew.config.external_security_enabled,
+        )
+        assert not launch.managed
+        assert not launch.external_managed
+        assert launch.helper_argv == ()
+        with use_process_launch(launch):
+            result = await execute_captured(
+                (sys.executable, "-c", "print('host-execution-ok')"),
+                cwd=tmp_path,
+                timeout=10,
+            )
+        assert result.returncode == 0
+        assert result.stdout.strip() == "host-execution-ok"
     finally:
         crew.security_rules.close()
         crew.security_audit.close()
@@ -517,55 +586,25 @@ async def test_capabilities_do_not_trust_static_windows_identity(api, tmp_path, 
 
 
 @pytest.mark.asyncio
-async def test_capabilities_require_separate_live_filesystem_and_network_probes(
+async def test_windows_capabilities_skip_native_probes(
     api,
     tmp_path,
     monkeypatch,
 ):
     helper = tmp_path / "ace-security-runtime.exe"
     helper.write_bytes(b"fake helper")
-    calls: list[bool] = []
-
-    class FakeRuntimeClient:
-        def __init__(self, helper_argv):
-            assert helper_argv == (str(helper),)
-
-        async def execute(self, **kwargs):
-            network_enabled = kwargs["network_enabled"]
-            calls.append(network_enabled)
-            assert kwargs["readonly_roots"] == (Path(kwargs["cwd"]) / ".git",)
-            assert kwargs["readable_roots"] == (readable_root,)
-            Path(kwargs["cwd"]).joinpath("probe-marker").write_text("ok", encoding="ascii")
-            return SimpleNamespace(
-                exit_code=0,
-                stdout="probe",
-                capabilities=RuntimeCapabilities(
-                    backend="windows_sandbox_account",
-                    filesystem_sandbox=True,
-                    process_tree_cleanup=True,
-                    managed_network=network_enabled,
-                    full_disk_read=True,
-                    explicit_handle_inheritance=True,
-                    windows_restricted_token=True,
-                    windows_acl=True,
-                    windows_job=True,
-                    windows_wfp=network_enabled,
-                ),
-            )
+    async def unexpected_probe(*args, **kwargs):
+        raise AssertionError("Windows must not run native sandbox probes")
 
     monkeypatch.setattr("crew.gateway.routers.security.platform.system", lambda: "Windows")
     monkeypatch.setattr(
         "crew.security.launch.packaged_runtime_argv",
         lambda: (str(helper),),
     )
-    monkeypatch.setattr("crew.security.launch.runtime_source_stale", lambda *_args: False)
-    readable_root = tmp_path / "readable"
-    readable_root.mkdir()
     monkeypatch.setattr(
-        "crew.security.launch._windows_full_disk_read_roots",
-        lambda: (readable_root,),
+        "crew.gateway.routers.security._live_filesystem_runtime",
+        unexpected_probe,
     )
-    monkeypatch.setattr("crew.gateway.routers.security.NativeRuntimeClient", FakeRuntimeClient)
 
     path = "/api/security/capabilities"
     transport = ASGITransport(app=api, client=("127.0.0.1", 12345))
@@ -573,9 +612,9 @@ async def test_capabilities_require_separate_live_filesystem_and_network_probes(
         response = await client.get(path, headers=_headers("GET", path))
 
     assert response.status_code == 200
-    assert response.json()["filesystem_sandbox"] is True
-    assert response.json()["managed_network"] is True
-    assert calls == [False, True]
+    assert response.json()["filesystem_sandbox"] is False
+    assert response.json()["managed_network"] is False
+    assert "暂时停用" in response.json()["detail"]
 
 
 @pytest.mark.asyncio

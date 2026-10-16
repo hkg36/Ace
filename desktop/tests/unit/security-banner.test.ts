@@ -15,6 +15,7 @@ vi.mock('../../src/ui/ui-feedback', () => ({
 import {
   deriveState,
   refreshSecurityBanner,
+  renderSecurityBanner,
   stopSecurityBannerRefresh,
 } from '../../src/ui/features/security-banner';
 
@@ -24,6 +25,7 @@ beforeEach(() => {
   document.body.innerHTML = '<div class="chat-composer"><div class="composer-edit-banner"></div></div>';
   Object.assign(window, {
     Crew: {
+      runtimePlatform: 'darwin',
       securityCapabilities: vi.fn(async () => ({
         ok: true,
         body: {
@@ -52,61 +54,64 @@ describe('security banner deriveState', () => {
     expect(deriveState({ platform: 'darwin', helper_present: true, filesystem_sandbox: false, managed_network: false })).toBe('mac-incomplete');
   });
 
-  it('reports missing when the helper binary is absent', () => {
-    expect(deriveState({ platform: 'win32', helper_present: false })).toBe('missing');
-  });
-
   it('does not show a platform-specific setup prompt before detection completes', () => {
     expect(deriveState({ helper_present: false })).toBe('hidden');
   });
 
-  it('reports stale when the runtime binary lags behind Rust source', () => {
-    expect(deriveState({ platform: 'win32', helper_present: true, runtime_stale: true, filesystem_sandbox: true, managed_network: true })).toBe('stale');
-  });
-
-  it('reports off when the filesystem sandbox is not enabled', () => {
-    expect(deriveState({ platform: 'win32', helper_present: true, filesystem_sandbox: false, managed_network: false })).toBe('off');
-  });
-
-  it('reports off for the backend Windows platform name when setup is missing', () => {
-    expect(deriveState({ platform: 'windows', helper_present: true, filesystem_sandbox: false, managed_network: false })).toBe('off');
-  });
-
-  it('keeps the install prompt ahead of stale diagnostics when the sandbox is not ready', () => {
+  it.each(['windows', 'win32'])('hides all sandbox states on %s', (platform) => {
+    expect(deriveState({ platform, helper_present: false })).toBe('hidden');
     expect(deriveState({
-      platform: 'windows',
+      platform,
       helper_present: true,
       runtime_stale: true,
       filesystem_sandbox: false,
       managed_network: false,
-    })).toBe('off');
+    })).toBe('hidden');
+    expect(deriveState({
+      platform,
+      helper_present: true,
+      filesystem_sandbox: true,
+      managed_network: true,
+    })).toBe('hidden');
   });
 
-  it('shows the sandbox install prompt above the composer', async () => {
+  it('does not show a Windows setup prompt returned by the gateway', async () => {
     await refreshSecurityBanner();
 
     const banner = document.getElementById('security-sandbox-banner');
-    expect(banner?.classList.contains('show')).toBe(true);
-    expect(banner?.querySelector('.security-banner__title')?.textContent)
-      .toBe('请安装安全沙箱');
-    expect(banner?.querySelector('.security-banner__text')?.textContent)
-      .toContain('限制命令对本机文件和网络的访问');
-    expect(banner?.querySelector<HTMLButtonElement>('[data-action="enable"]')?.textContent)
-      .toBe('安装安全沙箱');
-    expect(banner?.nextElementSibling?.classList.contains('composer-edit-banner')).toBe(true);
+    expect(banner?.classList.contains('show')).toBe(false);
+    expect(banner?.querySelector('[data-action="enable"]')).toBeNull();
   });
 
-  it('uses the in-app confirmation before requesting administrator access', async () => {
+  it('removes an existing banner and stops polling on Windows', async () => {
+    vi.useFakeTimers();
+    renderSecurityBanner();
+    expect(document.getElementById('security-sandbox-banner')).not.toBeNull();
     const securitySetup = vi.fn(async () => ({ ok: true, exitCode: 0 }));
-    Object.assign(window.Crew, { securitySetup });
+    const securityCapabilities = vi.fn();
+    Object.assign(window.Crew, { runtimePlatform: 'win32', securitySetup, securityCapabilities });
+    try {
+      await refreshSecurityBanner();
+      await vi.advanceTimersByTimeAsync(60000);
+      expect(document.getElementById('security-sandbox-banner')).toBeNull();
+      expect(securityCapabilities).not.toHaveBeenCalled();
+      expect(securitySetup).not.toHaveBeenCalled();
+      expect(showConfirmDialogMock).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 
+  it('keeps the macOS incomplete-protection banner', async () => {
+    Object.assign(window.Crew, {
+      securityCapabilities: vi.fn(async () => ({
+        ok: true,
+        body: { platform: 'darwin', helper_present: false },
+      })),
+    });
     await refreshSecurityBanner();
-    document.querySelector<HTMLButtonElement>('[data-action="enable"]')?.click();
-    await vi.waitFor(() => expect(showConfirmDialogMock).toHaveBeenCalledWith(expect.objectContaining({
-      title: '安装安全沙箱',
-      confirmText: '安装并继续',
-    })));
-
-    await vi.waitFor(() => expect(securitySetup).toHaveBeenCalledWith({ action: 'install' }));
+    const banner = document.getElementById('security-sandbox-banner');
+    expect(banner?.classList.contains('show')).toBe(true);
+    expect(banner?.querySelector('.security-banner__title')?.textContent).toBe('安全防护尚未就绪');
   });
 });

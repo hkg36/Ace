@@ -48,6 +48,7 @@ describe('security capability summary', () => {
 describe('security module switch', () => {
   beforeEach(() => {
     __resetAllStoresForTest();
+    Object.assign(window, { Crew: { runtimePlatform: 'darwin' } });
   });
 
   it('treats a missing config as disabled', () => {
@@ -59,6 +60,12 @@ describe('security module switch', () => {
     expect(securityModuleEnabled()).toBe(true);
 
     configStore.set({ config: configWithSecurity({ enabled: false }) });
+    expect(securityModuleEnabled()).toBe(false);
+  });
+
+  it('keeps the Windows module disabled even if the backend enables it', () => {
+    Object.assign(window, { Crew: { runtimePlatform: 'win32' } });
+    configStore.set({ config: configWithSecurity({ enabled: true }) });
     expect(securityModuleEnabled()).toBe(false);
   });
 });
