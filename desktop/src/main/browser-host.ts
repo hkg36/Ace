@@ -2247,12 +2247,20 @@ function pathKey(value: string): string {
 function validateProfileOwnership(profile: string, expectedRuntimeKey?: string): void {
   const profileName = path.basename(profile);
   const browserDir = path.dirname(profile);
-  const ownerDir = path.dirname(browserDir);
+  const containerDir = path.dirname(browserDir);
+  const workspaceDir = path.dirname(containerDir);
+  const workspacesDir = path.dirname(workspaceDir);
+  const workspaceScoped = path.basename(containerDir).toLocaleLowerCase() === '.crew'
+    && path.basename(workspacesDir).toLocaleLowerCase() === 'task_workspaces';
+  const projectScoped = path.basename(workspaceDir).toLocaleLowerCase() === 'accounts'
+    && path.basename(workspacesDir).toLocaleLowerCase() === 'browser'
+    && path.basename(path.dirname(workspacesDir)).toLocaleLowerCase() === '.crew';
+  const ownerDir = workspaceScoped ? path.dirname(workspacesDir) : containerDir;
   const accountsDir = path.dirname(ownerDir);
   const ownerMatch = /^acct_([0-9a-f]{16})$/i.exec(path.basename(ownerDir));
   if (
     profileName.toLocaleLowerCase() !== 'profile'
-    || path.basename(browserDir).toLocaleLowerCase() !== 'browser'
+    || (!projectScoped && path.basename(browserDir).toLocaleLowerCase() !== 'browser')
     || path.basename(accountsDir).toLocaleLowerCase() !== 'accounts'
     || !ownerMatch
   ) {
@@ -2260,7 +2268,7 @@ function validateProfileOwnership(profile: string, expectedRuntimeKey?: string):
       code: 'invalid_profile',
     });
   }
-  if (expectedRuntimeKey && ownerMatch[1].slice(0, 12).toLocaleLowerCase() !== expectedRuntimeKey.slice(5)) {
+  if (expectedRuntimeKey && ownerMatch[1].slice(0, 12).toLocaleLowerCase() !== expectedRuntimeKey.split(':')[0].slice(5)) {
     throw new BrowserHostError('浏览器 Profile 与账号标识不匹配', {
       code: 'profile_owner_mismatch',
     });
@@ -2602,7 +2610,7 @@ export class BrowserHost extends EventEmitter {
 
   async handleRpc(requestValue: unknown): Promise<unknown> {
     const request = asRecord(requestValue, 'RPC 请求') as unknown as BrowserRpcRequest;
-    const key = runtimeKey(request.runtime_key);
+    const accountKey = runtimeKey(request.runtime_key);
     const method = asString(request.method, 'RPC method', 80).trim();
     const params = asRecord(request.params ?? {}, 'RPC params');
     if (!method) throw new BrowserHostError('RPC method 不能为空', { code: 'invalid_request' });
@@ -2618,6 +2626,15 @@ export class BrowserHost extends EventEmitter {
         atomicReplayEffects: true,
       };
     }
+    if (method === 'close_owner' && !params.profile_dir) {
+      for (const [key, owner] of [...this.owners]) {
+        if (owner.runtimeKey === accountKey) await this.closeOwner(key, params);
+      }
+      return { closed: true };
+    }
+    const key = params.profile_dir
+      ? this.profileOwnerKey(accountKey, profilePath(params.profile_dir, accountKey))
+      : accountKey;
     if (method === 'deny_downloads') return this.denyDownloads(key, params);
     if (method === 'close_owner') return this.closeOwner(key, params);
     if (method === 'clear_owner_data') return this.clearOwnerData(key, params);
@@ -2663,7 +2680,7 @@ export class BrowserHost extends EventEmitter {
 
   setPanel(request: BrowserPanelRequest): void {
     this.assertUsable();
-    const owner = this.requireOwner(runtimeKey(request.runtimeKey));
+    const owner = this.requirePanelOwner(request.runtimeKey, request.sessionId);
     const tab = this.requirePanelTab(owner, request.sessionId, request.tabLabel);
     if (tab.crashed || tab.view.webContents.isDestroyed()) {
       if (this.panel?.tab === tab) this.hidePanel();
@@ -2776,7 +2793,7 @@ export class BrowserHost extends EventEmitter {
 
   getPanelNavigation(request: BrowserPanelCaptureRequest): BrowserPanelNavigation {
     this.assertUsable();
-    const owner = this.requireOwner(runtimeKey(request.runtimeKey));
+    const owner = this.requirePanelOwner(request.runtimeKey, request.sessionId);
     const tab = this.requirePanelTab(owner, request.sessionId, request.tabLabel);
     if (tab.crashed || tab.view.webContents.isDestroyed()) {
       throw new BrowserHostError('浏览器标签页已停止', { code: 'tab_stopped' });
@@ -2802,7 +2819,7 @@ export class BrowserHost extends EventEmitter {
       typeof runtimeKeyOrRequest === 'string'
         ? { runtimeKey: runtimeKeyOrRequest, tabLabel: tabLabel ?? '', sessionId: sessionId ?? '' }
         : runtimeKeyOrRequest;
-    const owner = this.requireOwner(runtimeKey(request.runtimeKey));
+    const owner = this.requirePanelOwner(request.runtimeKey, request.sessionId);
     const tab = this.requirePanelTab(owner, request.sessionId, request.tabLabel);
     // 同 setPanel：截图跟随「请求的会话的 tab」，不跟随 agent 最后操作的 activeTabId，
     // 否则另一个会话的 agent 一动，当前会话的面板截图就被拒。
@@ -2922,6 +2939,33 @@ export class BrowserHost extends EventEmitter {
     this.ownerQueues.delete(key);
   }
 
+  private profileOwnerKey(accountKey: string, profile: string): string {
+    const container = path.dirname(path.dirname(profile));
+    const projectScoped = path.basename(path.dirname(container)).toLocaleLowerCase() === 'accounts'
+      && path.basename(path.dirname(path.dirname(container))).toLocaleLowerCase() === 'browser'
+      && path.basename(path.dirname(path.dirname(path.dirname(container)))).toLocaleLowerCase() === '.crew';
+    if (path.basename(container).toLocaleLowerCase() !== '.crew' && !projectScoped) {
+      return accountKey;
+    }
+    return `${accountKey}:${createHash('sha256').update(pathKey(profile)).digest('hex')}`;
+  }
+
+  private requirePanelOwner(value: string, sessionId: string): BrowserOwner {
+    const key = runtimeKey(value);
+    const hash = sessionHash(sessionId);
+    const owner = [...this.owners.values()].find((candidate) =>
+      candidate.runtimeKey === key
+      && candidate.lifecycle === 'active'
+      && [...candidate.tabs.values()].some((tab) => tab.sessionHash === hash));
+    if (!owner) {
+      if ([...this.owners.values()].some((candidate) => candidate.runtimeKey === key)) {
+        throw new BrowserHostError('浏览器标签页不属于当前 Crew 会话', { code: 'session_mismatch' });
+      }
+      throw new BrowserHostError('会话浏览器尚未启动', { code: 'owner_not_running', browserStopped: true });
+    }
+    return owner;
+  }
+
   private requireOwner(key: string): BrowserOwner {
     const owner = this.owners.get(key);
     if (!owner || owner.lifecycle !== 'active') {
@@ -2965,7 +3009,7 @@ export class BrowserHost extends EventEmitter {
 
     const electron = electronSession.fromPath(profile, { cache: true });
     const owner: BrowserOwner = {
-      runtimeKey: key,
+      runtimeKey: key.split(':')[0],
       profilePath: profile,
       session: electron,
       tabs: new Map(),

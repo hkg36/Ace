@@ -2530,10 +2530,16 @@ def build_app(config: Config | None = None, *, enable_team: bool = True) -> Crew
         wal_enabled=cfg.sqlite_wal,
     )
     log.info("memory.db 路径: %s", cfg.memory_db_path)
+    from crew.browser.manager import BrowserManager
+
+    BrowserManager.cleanup_pending_workspace_profiles()
     plugins = PluginManager(
         [LoggingPlugin()],
         registry=registry,
-        services={"config": cfg, "plugin_prefs": plugin_prefs},
+        services={
+            "config": cfg, "plugin_prefs": plugin_prefs,
+            "session_store": session_store, "workspace_store": workspace_store,
+        },
     )
 
     # 配置全局 skill 过滤器

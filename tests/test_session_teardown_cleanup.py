@@ -183,6 +183,47 @@ def test_delete_session_blocked_by_enabled_cron(tmp_path, auth_headers):
     assert app.cron_store.list(session_id=sid, owner_account_id=OWNER) == []
 
 
+@pytest.mark.parametrize("cleanup_fails", [False, True])
+def test_delete_workspace_clears_browser_data_before_deleting_rows(
+    tmp_path, auth_headers, cleanup_fails,
+):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from crew.browser.driver import BrowserDriverError
+
+    client, app = _client(tmp_path)
+    workspace = app.workspace_store.create("Browser workspace", owner_account_id=OWNER)
+    wid = workspace["id"]
+    app.session_store.save(
+        "workspace-browser", [Message.user("keep until browser cleanup succeeds")],
+        workspace_id=wid, owner_account_id=OWNER,
+    )
+
+    async def clear(owner, workspace_id):
+        assert owner == OWNER
+        assert workspace_id == wid
+        assert app.workspace_store.get(wid, owner_account_id=OWNER)
+        assert app.session_store.session_belongs_to("workspace-browser", OWNER)
+        if cleanup_fails:
+            raise BrowserDriverError("cannot clear profile")
+
+    manager = SimpleNamespace(
+        delete_workspace_data=AsyncMock(side_effect=clear),
+        close_session=AsyncMock(),
+    )
+    app.browser_manager = manager
+    response = client.delete(f"/api/workspace/{wid}", headers=auth_headers)
+    manager.delete_workspace_data.assert_awaited_once_with(OWNER, wid)
+    assert response.status_code == (503 if cleanup_fails else 200)
+    assert app.session_store.session_belongs_to("workspace-browser", OWNER) is cleanup_fails
+    if cleanup_fails:
+        assert app.workspace_store.get(wid, owner_account_id=OWNER)
+    else:
+        with pytest.raises(KeyError):
+            app.workspace_store.get(wid, owner_account_id=OWNER)
+
+
 def test_task_runtime_unlink_and_prune_removes_disk(tmp_path):
     from crew.tasks.runtime import TaskRuntime
 

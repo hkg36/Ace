@@ -2951,6 +2951,62 @@ describe('BrowserHost', () => {
     await host.dispose();
   });
 
+  it.each(['managed', 'project'])('isolates persistent Sessions and lifecycle operations in %s workspaces', async (layout) => {
+    const window = fakeWindow();
+    const host = new BrowserHost(() => window);
+    const openWorkspace = async (workspace: string, sid: string): Promise<string> => {
+      const profile = layout === 'project'
+        ? path.join(tempRoot, 'project', '.crew', 'browser', 'accounts', ACCOUNT_DIR, workspace, 'profile')
+        : path.join(tempRoot, 'accounts', ACCOUNT_DIR, 'task_workspaces', workspace, '.crew', 'browser', 'profile');
+      await mkdir(profile, { recursive: true });
+      const label = `s${createHash('sha256').update(sid).digest('hex').slice(0, 32)}-1`;
+      await host.handleRpc({
+        runtime_key: RUNTIME_KEY,
+        method: 'execute',
+        params: {
+          profile_dir: profile,
+          command: 'tab',
+          args: ['new', '--label', label, 'https://example.com/'],
+          proxy_url: PROXY_URL,
+          mutating: true,
+        },
+      });
+      return profile;
+    };
+    const a = await openWorkspace('project-a', SESSION_ID);
+    await openWorkspace('project-a', 'same-workspace-session');
+    const b = await openWorkspace('project-b', 'other-workspace-session');
+    await openWorkspace('default', 'default-session');
+    await expect(host.handleRpc({
+      runtime_key: 'crew_ffffffffffff', method: 'execute',
+      params: { profile_dir: a, command: 'tab', args: ['list'], proxy_url: PROXY_URL },
+    })).rejects.toMatchObject({ code: 'profile_owner_mismatch' });
+    expect(electron.sessions).toHaveLength(3);
+    expect(electron.views[0].options.webPreferences.session).toBe(electron.views[1].options.webPreferences.session);
+    expect(electron.views[0].options.webPreferences.session).not.toBe(electron.views[2].options.webPreferences.session);
+    host.setPanel({
+      runtimeKey: RUNTIME_KEY, sessionId: 'other-workspace-session',
+      tabLabel: `s${createHash('sha256').update('other-workspace-session').digest('hex').slice(0, 32)}-1`,
+      mode: 'ai', visible: true, bounds: { x: 0, y: 0, width: 400, height: 300 },
+    });
+    await host.handleRpc({
+      runtime_key: RUNTIME_KEY, method: 'clear_owner_data', params: { profile_dir: a },
+    });
+    expect(electron.sessions[0].clearSteps).toContain('clearData');
+    expect(electron.sessions[1].clearSteps).not.toContain('clearData');
+    await host.handleRpc({
+      runtime_key: RUNTIME_KEY, method: 'close_owner', params: { profile_dir: a },
+    });
+    expect(electron.views[2].webContents.isDestroyed()).toBe(false);
+    await expect(host.handleRpc({
+      runtime_key: RUNTIME_KEY, method: 'execute',
+      params: { profile_dir: b, command: 'tab', args: ['list'], proxy_url: PROXY_URL },
+    })).resolves.toBeDefined();
+    await host.handleRpc({ runtime_key: RUNTIME_KEY, method: 'close_owner', params: {} });
+    expect(electron.views.every((view: any) => view.webContents.isDestroyed())).toBe(true);
+    await host.dispose();
+  });
+
   it('materializes an initial blank document before debugger setup and target navigation', async () => {
     electron.initialWebContentsURL = '';
     const host = new BrowserHost(() => fakeWindow());

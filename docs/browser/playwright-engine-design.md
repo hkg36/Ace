@@ -14,7 +14,7 @@
 
 1. **不复刻 Playwright。** Crew 内置官方 `playwright-core`，不维护 selector、
    accessible name、actionability、frame/worker 或 Browser/Context/Page 的分叉实现。
-2. **生产 Electron 引擎已经使用 Playwright。** 每个 owner 拥有一个
+2. **生产 Electron 引擎已经使用 Playwright。** 每个账号的每个工作空间拥有一个
    `PlaywrightEngine`、一个 `ElectronCdpTransport` 和一个合成 persistent context；
    `BrowserHost` 当前仍在 owner 创建时直接构造 `new PlaywrightEngine()`。
 3. **CDP transport 保留，但只做 Electron 适配。** 它把 page 级
@@ -35,6 +35,29 @@
    拓扑，不能声称生产已经自动切到 managed Chromium。
 
 ---
+
+### 工作空间 Profile 隔离
+
+账号级 RPC 连接与权限代次保持不变；Python 运行时、Electron Session、
+Playwright context 和生命周期队列按工作空间独立。同一工作空间的会话共享登录态，
+不同工作空间（包括默认工作空间）不共享 Cookie、缓存或站点存储。
+面板的立即停止只停止当前工作空间；账号级关闭插件仍撤销该账号所有工作空间的浏览器能力。
+
+工作空间设置了项目目录时，Profile 位于：
+`{root_path}/.crew/browser/accounts/{account_hash}/{workspace_id}/profile`。
+未设置项目目录（包括默认工作空间）时使用：
+`{owner_home}/task_workspaces/{workspace_id}/.crew/browser/profile`。
+即使多个工作空间选择同一项目目录，账号与工作空间 ID 子目录也确保登录态独立。
+删除时只清理对应的浏览器子目录，不删除项目源码或其他工作空间的数据。
+旧的账号共享 Profile 不会复制到各工作空间，升级后需在各工作空间重新登录。
+
+删除工作空间时先清空该空间的 Electron 浏览数据并关闭页面，再删除其浏览器目录。
+Windows 的 Electron Session 在进程结束前可能仍持有文件锁：此时在该工作空间的
+浏览器目录旁留下 `*-delete-pending` 标记，并在
+`{CREW_HOME}/browser-profile-deletions/` 原子保存清理记录。
+即使工作空间数据库行已删除，下次应用启动、打开任何 Profile 前仍可找到项目目录并重试删除。
+清理失败会记录日志并保留标记，带标记的 Profile 不允许重新打开。
+账号级清除浏览数据、关闭插件和宿主重连仍覆盖该账号的所有工作空间。
 
 ## 1. 为什么应继承 Playwright，而不是继续补手写 CDP
 

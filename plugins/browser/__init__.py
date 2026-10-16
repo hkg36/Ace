@@ -33,7 +33,14 @@ def register(ctx) -> None:
         raise RuntimeError("browser 插件缺少 config 服务")
     plugin_prefs = ctx.services.get("plugin_prefs")
 
-    manager = BrowserManager(config.browser)
+    session_store = ctx.services.get("session_store")
+    manager = BrowserManager(
+        config.browser,
+        workspace_for_session=(
+            session_store.get_workspace_id if session_store is not None else None
+        ),
+        workspace_store=ctx.services.get("workspace_store"),
+    )
     ctx.register_disposer(_close_manager)
     ctx.register_skill_root("skills")
     browser_tool = register_browser_use_tool(ctx, manager, config, plugin_prefs)

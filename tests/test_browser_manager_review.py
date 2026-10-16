@@ -4990,7 +4990,7 @@ async def test_clear_owner_data_orders_session_clear_before_close_and_artifacts(
     manager = BrowserManager(BrowserConfig(), driver)
     try:
         await manager.navigate("owner", "session", "https://example.com")
-        browser_root = browser_env / "accounts" / "owner" / "browser"
+        browser_root = manager._workspace_profile("owner", "default").parent
         profile = browser_root / "profile"
         artifacts = browser_root / "artifacts"
         profile.mkdir(parents=True, exist_ok=True)

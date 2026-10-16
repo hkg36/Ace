@@ -16,6 +16,7 @@ from crew.agent.loop.tool_result_display import (
     SUBAGENT_FULL_RESULT_TOOLS,
     tool_result_detail_for_ui,
 )
+from crew.browser.driver import BrowserDriverError
 from crew.core.types import Message, ToolCall, tool_arguments_for_ui
 from crew.gateway.auth import account_from_request
 from crew.gateway.helpers import require_external_agents_enabled, with_session_agent_labels
@@ -404,7 +405,29 @@ def create_sessions_router(crew, dispatcher) -> APIRouter:
                     {"ok": False, "error": block, "code": "cron_active", "session_id": sid},
                     status_code=409,
                 )
-        # 先事务删库，再尽力清盘：避免「盘已清、库行仍在」的半失败。
+        try:
+            crew.workspace_store.get(workspace_id, owner_account_id=owner)
+        except KeyError as exc:
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=404)
+        if workspace_id in {"default", "wiki"}:
+            return JSONResponse({"ok": False, "error": "不能删除内置工作空间"}, status_code=400)
+        browser_manager = getattr(crew, "browser_manager", None)
+        if browser_manager is None:
+            from crew.browser.manager import BrowserManager
+
+            browser_manager = BrowserManager(crew.config.browser, workspace_store=crew.workspace_store)
+        try:
+            await browser_manager.delete_workspace_data(owner, workspace_id)
+        except (BrowserDriverError, OSError) as exc:
+            log.warning("删除工作空间 %s 时清理浏览器数据失败", workspace_id, exc_info=True)
+            return JSONResponse(
+                {"ok": False, "error": f"浏览器数据清理失败，工作空间未删除: {exc}"},
+                status_code=503,
+            )
+        finally:
+            if getattr(crew, "browser_manager", None) is not browser_manager:
+                await browser_manager.aclose()
+        # 浏览数据清空成功后事务删库，其余会话资源继续按既有流程尽力清盘。
         # uploads 反查依赖历史：在删库前把各会话消息快照下来，供 teardown 使用。
         message_snapshots: dict[str, list] = {}
         for sid in session_ids:

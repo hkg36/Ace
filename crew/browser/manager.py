@@ -1,4 +1,4 @@
-"""Account-scoped browser lifecycle, tab isolation and Crew ref protocol."""
+"""Account/workspace-scoped browser lifecycle, tab isolation and Crew ref protocol."""
 
 from __future__ import annotations
 
@@ -21,11 +21,12 @@ from contextlib import contextmanager, suppress
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, AsyncIterator, Iterator
+from typing import Any, AsyncIterator, Callable, Iterator
 from urllib.parse import urlsplit
 
 from crew.browser.driver import BrowserDriver, BrowserDriverError, BrowserOperationCancelled
 from crew.browser.electron_driver import ElectronBrowserDriver
+from crew.browser.electron_bridge import electron_browser_bridge
 from crew.browser.security import (
     BrowserNetworkPolicy,
     LoopbackPolicyProxy,
@@ -34,7 +35,8 @@ from crew.browser.security import (
 )
 from crew.browser.types import BrowserConfig, BrowserPageState, BrowserRef
 from crew.core.types import MediaPart, ToolOutput, ToolPermissionDecision
-from crew.state.home import get_owner_runtime_home
+from crew.core.interfaces import WorkspaceStore
+from crew.state.home import get_crew_home, get_owner_runtime_home, owner_path_segment, safe_path_segment
 from crew.state.logging import get_logger
 
 log = get_logger("browser.manager")
@@ -378,6 +380,7 @@ class _Owner:
     owner: str
     runtime_key: str
     profile_dir: Path
+    workspace_id: str = "default"
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     control_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     stop_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
@@ -397,13 +400,27 @@ class _Owner:
     downloads_locked: bool = False
     closed_event: asyncio.Event = field(default_factory=asyncio.Event)
 
+    @property
+    def key(self) -> str:
+        return self.owner if self.workspace_id == "default" else f"{self.owner}\0{self.workspace_id}"
+
 
 class BrowserManager:
-    def __init__(self, config: BrowserConfig, driver: BrowserDriver | None = None) -> None:
+    def __init__(
+        self,
+        config: BrowserConfig,
+        driver: BrowserDriver | None = None,
+        *,
+        workspace_for_session: Callable[[str, str], str | None] | None = None,
+        workspace_store: WorkspaceStore | None = None,
+    ) -> None:
         self.config = config
         self.driver = driver or ElectronBrowserDriver(config)
         self.policy = BrowserNetworkPolicy(config)
         self._owners: dict[str, _Owner] = {}
+        self._workspace_for_session = workspace_for_session
+        self._workspace_store = workspace_store
+        self._deleted_workspaces: set[tuple[str, str]] = set()
         # (owner, session_id) -> 已登记的只读租约。独立于 _Session 存在，
         # 因为策略要在 session 被创建之前就能登记。
         self._owners_lock = asyncio.Lock()
@@ -421,6 +438,107 @@ class BrowserManager:
         # ref、截图与标签页句柄一律不可复用（见 revoke_owner）。
         self._capability_generations: dict[str, int] = {}
         self._closed = False
+
+    def _account_owners(self, owner_id: str) -> list[_Owner]:
+        return [owner for owner in self._owners.values() if owner.owner == owner_id]
+
+    def _get_owner(self, owner_id: str, session_id: str) -> _Owner | None:
+        # Teardown can run after the session row has already been deleted.
+        owner_id = str(owner_id or "").strip()
+        for owner in self._account_owners(owner_id):
+            if session_id in owner.sessions:
+                return owner
+        workspace_id = (
+            self._workspace_for_session(session_id, owner_id)
+            if self._workspace_for_session is not None
+            else "default"
+        )
+        if not workspace_id:
+            return None
+        return self._owners.get(self._workspace_key(owner_id, workspace_id))
+
+    def _session_workspace(self, owner_id: str, session_id: str) -> str:
+        if self._workspace_for_session is None or not session_id:
+            return "default"
+        workspace_id = self._workspace_for_session(session_id, owner_id)
+        if not workspace_id:
+            raise BrowserDriverError("浏览器会话不存在，无法确认工作空间")
+        return workspace_id
+
+    @staticmethod
+    def _workspace_key(owner_id: str, workspace_id: str) -> str:
+        return owner_id if workspace_id == "default" else f"{owner_id}\0{workspace_id}"
+
+    def _workspace_profile(self, owner_id: str, workspace_id: str) -> Path:
+        workspace = (
+            self._workspace_store.get(workspace_id, owner_account_id=owner_id)
+            if self._workspace_store is not None else {}
+        )
+        project_root = str(workspace.get("root_path") or "").strip()
+        if project_root:
+            return (
+                Path(project_root).expanduser().resolve()
+                / ".crew" / "browser" / "accounts" / owner_path_segment(owner_id)
+                / safe_path_segment(workspace_id, "default") / "profile"
+            )
+        return (
+            get_owner_runtime_home(owner_id)
+            / "task_workspaces"
+            / safe_path_segment(workspace_id, "default")
+            / ".crew"
+            / "browser"
+            / "profile"
+        )
+
+    @staticmethod
+    def _pending_marker(browser_root: Path) -> Path:
+        return browser_root.with_name(f"{browser_root.name}-delete-pending")
+
+    @staticmethod
+    def _pending_record(browser_root: Path) -> Path:
+        digest = hashlib.sha256(str(browser_root).encode("utf-8")).hexdigest()
+        return get_crew_home() / "browser-profile-deletions" / f"{digest}.json"
+
+    @staticmethod
+    def _validate_cleanup_root(browser_root: Path) -> None:
+        parts = browser_root.parts
+        managed = (
+            len(parts) >= 7 and parts[-1] == "browser" and parts[-2] == ".crew"
+            and parts[-4] == "task_workspaces" and parts[-6] == "accounts"
+            and re.fullmatch(r"acct_[0-9a-f]{16}", parts[-5]) is not None
+        )
+        project = (
+            len(parts) >= 6 and parts[-5:-2] == (".crew", "browser", "accounts")
+            and re.fullmatch(r"acct_[0-9a-f]{16}", parts[-2]) is not None
+        )
+        if not browser_root.is_absolute() or not (managed or project):
+            raise ValueError("待删除路径不是工作空间浏览器目录")
+        workspace = parts[-3] if managed else parts[-1]
+        if ".." in parts or safe_path_segment(workspace, "") != workspace:
+            raise ValueError("待删除路径不是工作空间浏览器目录")
+        for component in (browser_root, *list(browser_root.parents)[:4]):
+            if component.is_symlink():
+                raise ValueError("待删除浏览器目录包含符号链接")
+
+    @staticmethod
+    def cleanup_pending_workspace_profiles() -> None:
+        """Run before any Electron profile is opened, including with the plugin disabled."""
+        home = get_crew_home()
+        records = home / "browser-profile-deletions"
+        if records.is_dir() and not records.is_symlink():
+            for record in records.glob("*.json"):
+                try:
+                    data = json.loads(record.read_text(encoding="utf-8"))
+                    browser_root = Path(data["browser_root"])
+                    BrowserManager._validate_cleanup_root(browser_root)
+                    if BrowserManager._pending_record(browser_root) != record:
+                        raise ValueError("浏览器清理记录与目标目录不匹配")
+                    if browser_root.exists():
+                        shutil.rmtree(browser_root)
+                    BrowserManager._pending_marker(browser_root).unlink(missing_ok=True)
+                    record.unlink()
+                except (OSError, ValueError, KeyError, TypeError):
+                    log.warning("工作空间浏览器目录清理失败，保留待清理记录: %s", record, exc_info=True)
 
     async def update_upstream_proxy(self, proxy_url: str) -> None:
         """Apply the browser-only upstream proxy to active policy proxies."""
@@ -501,7 +619,7 @@ class BrowserManager:
 
         批量调用方负责 try/finally 复位；会话级标志，不影响其它会话。
         """
-        owner = await self._owner(owner_account_id)
+        owner = await self._owner(owner_account_id, session_id)
         async with owner.lock:
             session = self._session(owner, session_id)
             session.defer_post_observation = deferred
@@ -515,8 +633,7 @@ class BrowserManager:
     def renew_capability(self, owner_account_id: str) -> int:
         """重新启用能力时递增代次，并失效旧页面观察句柄。"""
         owner_id = str(owner_account_id or "").strip()
-        owner = self._owners.get(owner_id)
-        if owner is not None:
+        for owner in self._account_owners(owner_id):
             self._clear_native_selection(owner)
             for session in owner.sessions.values():
                 lease = session.active_replay
@@ -527,10 +644,10 @@ class BrowserManager:
 
     def capability_runtime_state(self, owner_account_id: str) -> dict[str, bool]:
         """Return a synchronous fail-closed view for capability enable gates."""
-        owner = self._owners.get(str(owner_account_id or "").strip())
-        closing = bool(owner is not None and owner.closing)
-        actions_blocked = bool(owner is not None and owner.actions_blocked)
-        stop_unconfirmed = bool(owner is not None and owner.stop_unconfirmed)
+        owners = self._account_owners(str(owner_account_id or "").strip())
+        closing = any(owner.closing for owner in owners)
+        actions_blocked = any(owner.actions_blocked for owner in owners)
+        stop_unconfirmed = any(owner.stop_unconfirmed for owner in owners)
         return {
             "ready": not (closing or actions_blocked or stop_unconfirmed),
             "closing": closing,
@@ -566,15 +683,15 @@ class BrowserManager:
         owner_id = str(owner_account_id or "").strip()
         if not owner_id:
             return
-        owner: _Owner | None = None
+        owners: list[_Owner] = []
         generation = self.capability_generation(owner_id)
 
         async def fence_owner() -> None:
-            nonlocal generation, owner
+            nonlocal generation, owners
             async with self._owners_lock:
                 generation = self._bump_capability_generation(owner_id)
-                owner = self._owners.get(owner_id)
-                if owner is not None:
+                owners = self._account_owners(owner_id)
+                for owner in owners:
                     owner.closing = True
                     owner.actions_blocked = True
 
@@ -583,19 +700,24 @@ class BrowserManager:
         # hold an older capability generation.
         cancelled = await self._complete_critical(fence_owner())
         log.info("browser capability revoked for owner=%s generation=%d", owner_id, generation)
-        if owner is None:
+        if not owners:
             if cancelled:
                 raise asyncio.CancelledError
             return
 
         async def close_and_retire() -> None:
-            await self._close_owner(owner)
-            async with self._owners_lock:
-                if self._owners.get(owner_id) is owner:
-                    self._owners.pop(owner_id, None)
-            owner.stop_unconfirmed = False
-            if not owner.closed_event.is_set():
+            async def retire(owner: _Owner) -> None:
+                await self._close_owner(owner)
+                async with self._owners_lock:
+                    if self._owners.get(owner.key) is owner:
+                        self._owners.pop(owner.key, None)
+                owner.stop_unconfirmed = False
                 owner.closed_event.set()
+
+            results = await asyncio.gather(*(retire(owner) for owner in owners), return_exceptions=True)
+            for result in results:
+                if isinstance(result, BaseException):
+                    raise result
 
         close_task = asyncio.create_task(close_and_retire())
         while not close_task.done():
@@ -619,12 +741,14 @@ class BrowserManager:
         if close_error is not None:
             # fail-stop：关闭无法确认时保留 closing/actions_blocked 墓碑，绝不允许
             # 同一 Profile 创建替代实例。_owner 对新代次也会明确报错而不是无限等待。
-            owner.stop_unconfirmed = True
+            for owner in owners:
+                if self._owners.get(owner.key) is owner:
+                    owner.stop_unconfirmed = True
+                    owner.closed_event.set()
             # 先立墓碑再唤醒：close_and_retire 只在成功路径 set() 事件，异常路径必须
             # 在这里补 set()，否则在关闭窗口内已 await closed_event 的 _owner() 等待者
             # 永远醒不过来。stop_unconfirmed 已置位，被唤醒的等待者重新拿锁会看到墓碑
             # 并抛「关闭状态无法确认」，而不是重新初始化一个已被撤销的 owner。
-            owner.closed_event.set()
             log.error(
                 "browser revoke could not confirm owner shutdown",
                 exc_info=(type(close_error), close_error, close_error.__traceback__),
@@ -688,7 +812,7 @@ class BrowserManager:
         """Close an idle owner without racing a replacement on its profile."""
         async with owner.lock:
             async with self._owners_lock:
-                if self._owners.get(owner.owner) is not owner:
+                if self._owners.get(owner.key) is not owner:
                     return
                 if not owner.retiring or owner.last_activity >= cutoff:
                     owner.retiring = False
@@ -705,7 +829,7 @@ class BrowserManager:
                 # Removing the tombstone after an unconfirmed close would let
                 # a replacement race a still-live Host owner on that Profile.
                 async with self._owners_lock:
-                    if self._owners.get(owner.owner) is owner:
+                    if self._owners.get(owner.key) is owner:
                         owner.closing = False
                         owner.actions_blocked = False
                         owner.retiring = False
@@ -730,8 +854,8 @@ class BrowserManager:
                     (session.session_id, self._page_state(owner, session).public_dict())
                 )
             async with self._owners_lock:
-                if self._owners.get(owner.owner) is owner:
-                    self._owners.pop(owner.owner, None)
+                if self._owners.get(owner.key) is owner:
+                    self._owners.pop(owner.key, None)
             owner.closed_event.set()
             for session_id, state in retired_states:
                 await self._publish(
@@ -791,17 +915,29 @@ class BrowserManager:
         """
         return None
 
-    async def _owner(self, owner_account_id: str) -> _Owner:
+    async def _owner(self, owner_account_id: str, session_id: str = "") -> _Owner:
         owner_id = str(owner_account_id or "").strip()
         if not owner_id:
             raise BrowserDriverError("browser 工具缺少账号上下文")
+        workspace_id = self._session_workspace(owner_id, session_id)
+        key = self._workspace_key(owner_id, workspace_id)
         while True:
             wait_for_close: asyncio.Event | None = None
             async with self._owners_lock:
                 if self._closed:
                     raise BrowserDriverError("浏览器管理器已关闭")
+                if (owner_id, workspace_id) in self._deleted_workspaces:
+                    raise BrowserDriverError("工作空间已删除，不能再启动浏览器")
+                profile = self._workspace_profile(owner_id, workspace_id)
+                if any(component.is_symlink() for component in (profile, *list(profile.parents)[:5])):
+                    raise BrowserDriverError("工作空间浏览器目录包含符号链接，不能安全隔离 Profile")
+                if (
+                    self._pending_marker(profile.parent).exists()
+                    or self._pending_record(profile.parent).exists()
+                ):
+                    raise BrowserDriverError("工作空间浏览器数据等待应用重启后完成删除")
                 self._ensure_leased_capability_current(owner_id)
-                current = self._owners.get(owner_id)
+                current = self._owners.get(key)
                 if current is not None and current.closing:
                     if current.stop_unconfirmed:
                         raise BrowserDriverError(
@@ -810,13 +946,13 @@ class BrowserManager:
                     wait_for_close = current.closed_event
                 else:
                     if current is None:
-                        home = get_owner_runtime_home(owner_id)
                         current = _Owner(
                             owner=owner_id,
                             runtime_key=f"crew_{_hash(owner_id)}",
-                            profile_dir=home / "browser" / "profile",
+                            profile_dir=profile,
+                            workspace_id=workspace_id,
                         )
-                        self._owners[owner_id] = current
+                        self._owners[key] = current
                     # Claiming an owner cancels a not-yet-started idle retire
                     # before the caller waits on its per-account lock.
                     current.last_activity = time.monotonic()
@@ -831,15 +967,14 @@ class BrowserManager:
                 async with current.lock:
                     async with self._owners_lock:
                         self._ensure_leased_capability_current(owner_id)
-                        stale = current.closing or self._owners.get(owner_id) is not current
+                        stale = current.closing or self._owners.get(key) is not current
                     if stale:
                         continue
                     try:
                         if not current.initialized:
-                            home = get_owner_runtime_home(owner_id)
                             await asyncio.to_thread(
                                 self._cleanup_expired_artifacts,
-                                home / "browser" / "artifacts",
+                                current.profile_dir.parent / "artifacts",
                             )
                             await self._start_owner_proxy(current)
                     except BaseException:
@@ -847,8 +982,8 @@ class BrowserManager:
                         # A waiter can therefore never reinitialize and return
                         # an owner that has already been removed from registry.
                         async with self._owners_lock:
-                            if self._owners.get(owner_id) is current:
-                                self._owners.pop(owner_id, None)
+                            if self._owners.get(key) is current:
+                                self._owners.pop(key, None)
                             current.closing = True
                             current.actions_blocked = True
                             current.closed_event.set()
@@ -856,8 +991,8 @@ class BrowserManager:
                 return current
             except Exception:
                 async with self._owners_lock:
-                    if self._owners.get(owner_id) is current:
-                        self._owners.pop(owner_id, None)
+                    if self._owners.get(key) is current:
+                        self._owners.pop(key, None)
                     current.closing = True
                     current.closed_event.set()
                 raise
@@ -945,9 +1080,11 @@ class BrowserManager:
         return owner.profile_dir.parent / "download-quarantine"
 
     def _artifact_dir(self, session: _Session) -> Path:
+        owner = self._get_owner(session.owner, session.session_id)
+        if owner is None:
+            raise BrowserDriverError("浏览器会话尚未启动，无法保存页面产物")
         path = (
-            get_owner_runtime_home(session.owner)
-            / "browser"
+            owner.profile_dir.parent
             / "artifacts"
             / _hash(session.session_id)
         )
@@ -1904,7 +2041,7 @@ class BrowserManager:
         self, owner_id: str, session_id: str, action: str, *, ok: bool
     ) -> None:
         """记录一次动作的结果，用于诊断，不实施固定次数熔断。"""
-        owner = self._owners.get(str(owner_id or ""))
+        owner = self._get_owner(owner_id, session_id)
         session = owner.sessions.get(str(session_id or "")) if owner else None
         if session is None:
             return
@@ -1936,7 +2073,7 @@ class BrowserManager:
         workflow-use 的 ErrorContext 字段设计得很好，但它只 logger.error 给人看。
         这里把它喂给模型——那正是它差的临门一脚。
         """
-        owner = self._owners.get(str(owner_id or ""))
+        owner = self._get_owner(owner_id, session_id)
         session = owner.sessions.get(str(session_id or "")) if owner else None
         text = str(message or "")
         failure_class = "unknown"
@@ -1973,7 +2110,7 @@ class BrowserManager:
             # 频繁调用，每次都去问宿主等于给 CDP 通道加一条无谓的心跳。
             # 步数以**实际落盘条数**为准，与停止时给出的摘要同一口径：
             # 宿主计数与真正写进轨迹的可能不一致（写盘失败会被吞）。
-            owner = await self._owner(owner_id)
+            owner = await self._owner(owner_id, session_id)
             async with owner.lock:
                 session = self._session(owner, session_id)
                 active = bool(session.recording_active)
@@ -1999,7 +2136,7 @@ class BrowserManager:
             # 此前完全不检查，而返回值里的 `recording: True` 是硬写的：录制已经
             # 停了之后再标注，数据被静默写进一段已经封口的轨迹（或凭空重建一个
             # 目录），而 UI 收到「成功」。用户以为标注记上了，编译时却找不到。
-            owner = await self._owner(owner_id)
+            owner = await self._owner(owner_id, session_id)
             async with owner.lock:
                 session = self._session(owner, session_id)
                 if not session.recording_active:
@@ -2022,7 +2159,7 @@ class BrowserManager:
         set_recording = getattr(self.driver, "set_recording", None)
         if not callable(set_recording):
             raise BrowserDriverError("当前浏览器运行时不支持录制")
-        owner = await self._owner(owner_id)
+        owner = await self._owner(owner_id, session_id)
         completed_recording_id = ""
         async with owner.lock:
             session = self._session(owner, session_id)
@@ -2191,7 +2328,7 @@ class BrowserManager:
 
     def _active_recording_id(self, owner_id: str, session_id: str) -> str:
         """当前会话正在录的那一段的 ID。取不到时返回空串（落到会话级根目录）。"""
-        owner = self._owners.get(str(owner_id or ""))
+        owner = self._get_owner(owner_id, session_id)
         session = owner.sessions.get(str(session_id or "")) if owner else None
         return session.recording_id if session else ""
 
@@ -2234,7 +2371,7 @@ class BrowserManager:
             return False
         # 正在录制的那一段不能删：目录删掉之后，仍在飞的事件会把它重建出来，
         # 留下一段"删过但又有内容"的残缺轨迹——比不删更难解释。
-        owner = self._owners.get(str(owner_id or "").strip())
+        owner = self._get_owner(owner_id, session_id)
         session = owner.sessions.get(session_id) if owner else None
         if (
             session is not None
@@ -2308,7 +2445,7 @@ class BrowserManager:
         if not destination_recording_id:
             return
         if record.get("action") == "limit":
-            owner = self._owners.get(str(owner_id or ""))
+            owner = self._get_owner(owner_id, session_id)
             session = (
                 owner.sessions.get(str(session_id or ""))
                 if owner is not None
@@ -3525,7 +3662,7 @@ class BrowserManager:
         ):
             raise BrowserDriverError("确定性回放租约参数无效", code="replay_lease_invalid")
         diagnostic_hosts = self._normalized_replay_hosts(allowed_hosts)
-        owner = await self._owner(owner_id)
+        owner = await self._owner(owner_id, session_id)
         async with owner.lock:
             session = self._session(owner, session_id)
             # 回收放在 _require_ai **之前**：它是前置条件而不是动作。
@@ -3607,7 +3744,7 @@ class BrowserManager:
             ):
                 _ACTIVE_REPLAY_CONTEXT.set(None)
 
-        owner = self._owners.get(owner_key)
+        owner = self._get_owner(owner_id, session_id)
         if owner is None:
             clear_matching_stale_context()
             return False
@@ -6174,7 +6311,7 @@ class BrowserManager:
         包裹过的不可信内容，把控制流建立在对它的字符串解析上，页面只要在正文里
         伪造一段同形状的 JSON 就能操纵回放。
         """
-        owner = self._owners.get(str(owner_id or "").strip())
+        owner = self._get_owner(owner_id, session_id)
         session = owner.sessions.get(session_id) if owner else None
         lease = session.active_replay if session else None
         if lease is None or not lease.suspended or not lease.resume_token:
@@ -6205,7 +6342,7 @@ class BrowserManager:
         放开绑定的同时用一次性 ``resume_token`` 证明"这次续跑对应的正是刚才挂起
         的那一段"，并且立刻作废它，防止同一个 token 被用第二次。
         """
-        owner = await self._owner(owner_id)
+        owner = await self._owner(owner_id, session_id)
         async with owner.lock:
             session = self._session(owner, session_id)
             lease = session.active_replay
@@ -6262,7 +6399,7 @@ class BrowserManager:
         step: dict[str, Any],
         workdir: str = "",
     ) -> str:
-        owner = await self._owner(owner_id)
+        owner = await self._owner(owner_id, session_id)
         async with owner.lock:
             session = self._session(owner, session_id)
             lease = self._require_replay_locked(
@@ -6670,7 +6807,7 @@ class BrowserManager:
 
     async def navigate(self, owner_id: str, session_id: str, url: str, *, workdir: str = "") -> str:
         safe_url = self.policy.validate_navigation_url(url)
-        owner = await self._owner(owner_id)
+        owner = await self._owner(owner_id, session_id)
         async with owner.lock:
             session = self._session(owner, session_id)
             self._require_ai(owner, session)
@@ -6714,7 +6851,7 @@ class BrowserManager:
     async def snapshot(
         self, owner_id: str, session_id: str, *, full: bool = False, workdir: str = ""
     ) -> str:
-        owner = await self._owner(owner_id)
+        owner = await self._owner(owner_id, session_id)
         async with owner.lock:
             session = self._session(owner, session_id)
             self._require_ai(owner, session)
@@ -6761,7 +6898,7 @@ class BrowserManager:
         workdir: str = "",
     ) -> str:
         flag, query = self._validated_find_query(text, regex)
-        owner = await self._owner(owner_id)
+        owner = await self._owner(owner_id, session_id)
         async with owner.lock:
             session = self._session(owner, session_id)
             self._require_ai(owner, session)
@@ -7109,7 +7246,7 @@ class BrowserManager:
         *,
         workdir: str = "",
     ) -> str:
-        owner = await self._owner(owner_id)
+        owner = await self._owner(owner_id, session_id)
         async with owner.lock:
             session = self._session(owner, session_id)
             self._require_ai(owner, session)
@@ -7131,7 +7268,7 @@ class BrowserManager:
         **匹配到 0 个或多个一律报错，不猜。** 匹配不到可能是页面改版、也可能是流程
         走岔了；匹配到多个说明这个身份在当前页面上不唯一。
         """
-        owner = await self._owner(owner_id)
+        owner = await self._owner(owner_id, session_id)
         async with owner.lock:
             session = self._session(owner, session_id)
             target = await self._locate_locked(
@@ -7323,7 +7460,7 @@ class BrowserManager:
                 delay_ms,
             )
         )
-        owner = await self._owner(owner_id)
+        owner = await self._owner(owner_id, session_id)
         async with owner.lock:
             session = self._session(owner, session_id)
             self._require_ai(owner, session)
@@ -7369,7 +7506,7 @@ class BrowserManager:
         workdir: str,
     ) -> str:
         """Dispatch one official Playwright ``page.mouse`` operation."""
-        owner = await self._owner(owner_id)
+        owner = await self._owner(owner_id, session_id)
         async with owner.lock:
             session = self._session(owner, session_id)
             self._require_ai(owner, session)
@@ -7562,7 +7699,7 @@ class BrowserManager:
     ) -> str:
         checked_width = self._validated_finite_number(width, "resize width")
         checked_height = self._validated_finite_number(height, "resize height")
-        owner = await self._owner(owner_id)
+        owner = await self._owner(owner_id, session_id)
         async with owner.lock:
             session = self._session(owner, session_id)
             self._require_ai(owner, session)
@@ -7602,7 +7739,7 @@ class BrowserManager:
             raise BrowserDriverError("type text 必须是字符串")
         if type(submit) is not bool or type(slowly) is not bool:
             raise BrowserDriverError("type submit/slowly 必须是 boolean")
-        owner = await self._owner(owner_id)
+        owner = await self._owner(owner_id, session_id)
         async with owner.lock:
             session = self._session(owner, session_id)
             self._require_ai(owner, session)
@@ -7700,7 +7837,7 @@ class BrowserManager:
     ) -> str:
         """Execute one typed, ordered form batch and never submit the form."""
         checked_fields = self._validated_fill_form_fields(fields)
-        owner = await self._owner(owner_id)
+        owner = await self._owner(owner_id, session_id)
         async with owner.lock:
             session = self._session(owner, session_id)
             self._require_ai(owner, session)
@@ -7772,7 +7909,7 @@ class BrowserManager:
         workdir: str,
     ) -> str:
         """Run one ref through the driver's exact Playwright Locator."""
-        owner = await self._owner(owner_id)
+        owner = await self._owner(owner_id, session_id)
         async with owner.lock:
             session = self._session(owner, session_id)
             self._require_ai(owner, session)
@@ -7799,7 +7936,7 @@ class BrowserManager:
     ) -> str:
         if not start_ref or not end_ref:
             raise BrowserDriverError("drag 必须同时提供 start_ref 和 end_ref")
-        owner = await self._owner(owner_id)
+        owner = await self._owner(owner_id, session_id)
         async with owner.lock:
             session = self._session(owner, session_id)
             self._require_ai(owner, session)
@@ -7905,7 +8042,7 @@ class BrowserManager:
         *,
         workdir: str,
     ) -> str:
-        owner = await self._owner(owner_id)
+        owner = await self._owner(owner_id, session_id)
         async with owner.lock:
             session = self._session(owner, session_id)
             self._require_ai(owner, session)
@@ -7959,7 +8096,7 @@ class BrowserManager:
         workdir: str = "",
     ) -> str:
         checked_key = self._validated_key(key)
-        owner = await self._owner(owner_id)
+        owner = await self._owner(owner_id, session_id)
         async with owner.lock:
             session = self._session(owner, session_id)
             self._require_ai(owner, session)
@@ -7989,7 +8126,7 @@ class BrowserManager:
         workdir: str,
     ) -> str:
         checked_key = self._validated_key(key)
-        owner = await self._owner(owner_id)
+        owner = await self._owner(owner_id, session_id)
         async with owner.lock:
             session = self._session(owner, session_id)
             self._require_ai(owner, session)
@@ -8054,7 +8191,7 @@ class BrowserManager:
             text,
             text_gone,
         )
-        owner = await self._owner(owner_id)
+        owner = await self._owner(owner_id, session_id)
         async with owner.lock:
             session = self._session(owner, session_id)
             self._require_ai(owner, session)
@@ -8126,7 +8263,7 @@ class BrowserManager:
             )
         if clear and (level != "info" or all or filename):
             raise BrowserDriverError("console clear 不能与 level/all/filename 组合")
-        owner = await self._owner(owner_id)
+        owner = await self._owner(owner_id, session_id)
         async with owner.lock:
             session = self._session(owner, session_id)
             self._require_ai(owner, session)
@@ -8315,7 +8452,7 @@ class BrowserManager:
             raise BrowserDriverError("network_requests filter 必须是字符串")
         if not isinstance(filename, str):
             raise BrowserDriverError("network_requests filename 必须是字符串")
-        owner = await self._owner(owner_id)
+        owner = await self._owner(owner_id, session_id)
         async with owner.lock:
             session = self._session(owner, session_id)
             self._require_ai(owner, session)
@@ -8367,7 +8504,7 @@ class BrowserManager:
             raise BrowserDriverError("network_request part 无效")
         if not isinstance(filename, str):
             raise BrowserDriverError("network_request filename 必须是字符串")
-        owner = await self._owner(owner_id)
+        owner = await self._owner(owner_id, session_id)
         async with owner.lock:
             session = self._session(owner, session_id)
             self._require_ai(owner, session)
@@ -8419,7 +8556,7 @@ class BrowserManager:
         if not isinstance(filename, str):
             raise BrowserDriverError("evaluate filename 必须是字符串")
         expression = function
-        owner = await self._owner(owner_id)
+        owner = await self._owner(owner_id, session_id)
         async with owner.lock:
             session = self._session(owner, session_id)
             self._require_ai(owner, session)
@@ -8551,7 +8688,7 @@ class BrowserManager:
             source_filename = str(resolved)
 
         assert isinstance(source, str)
-        owner = await self._owner(owner_id)
+        owner = await self._owner(owner_id, session_id)
         async with owner.lock:
             session = self._session(owner, session_id)
             self._require_ai(owner, session)
@@ -8605,7 +8742,7 @@ class BrowserManager:
             )
 
     async def get_images(self, owner_id: str, session_id: str, *, workdir: str = "") -> str:
-        owner = await self._owner(owner_id)
+        owner = await self._owner(owner_id, session_id)
         async with owner.lock:
             session = self._session(owner, session_id)
             self._require_ai(owner, session)
@@ -8638,7 +8775,7 @@ class BrowserManager:
                 "网页内标注会修改不可信页面 DOM，已禁用；"
                 "请使用 browser_use 的 vision action 获取普通截图"
             )
-        owner = await self._owner(owner_id)
+        owner = await self._owner(owner_id, session_id)
         async with owner.lock:
             session = self._session(owner, session_id)
             self._require_ai(owner, session)
@@ -8764,7 +8901,7 @@ class BrowserManager:
                 "screenshot 显式 type 与 filename 扩展名不一致"
             )
         file_type = image_type or inferred_type or "png"
-        owner = await self._owner(owner_id)
+        owner = await self._owner(owner_id, session_id)
         async with owner.lock:
             session = self._session(owner, session_id)
             self._require_ai(owner, session)
@@ -8853,7 +8990,7 @@ class BrowserManager:
         *,
         workdir: str = "",
     ) -> str:
-        owner = await self._owner(owner_id)
+        owner = await self._owner(owner_id, session_id)
         async with owner.lock:
             session = self._session(owner, session_id)
             self._require_ai(owner, session)
@@ -9141,7 +9278,7 @@ class BrowserManager:
         if not resolved and checked_data is None:
             raise BrowserDriverError('drop 至少需要非空 "paths" 或显式 "data"')
 
-        owner = await self._owner(owner_id)
+        owner = await self._owner(owner_id, session_id)
         async with owner.lock:
             session = self._session(owner, session_id)
             self._require_ai(owner, session)
@@ -9192,7 +9329,7 @@ class BrowserManager:
             paths,
             workdir=workdir,
         )
-        owner = await self._owner(owner_id)
+        owner = await self._owner(owner_id, session_id)
         async with owner.lock:
             session = self._session(owner, session_id)
             self._require_ai(owner, session)
@@ -9238,7 +9375,7 @@ class BrowserManager:
     async def download(
         self, owner_id: str, session_id: str, ref: str, filename: str = "", *, workdir: str = ""
     ) -> str:
-        owner = await self._owner(owner_id)
+        owner = await self._owner(owner_id, session_id)
         async with owner.lock:
             session = self._session(owner, session_id)
             self._require_ai(owner, session)
@@ -9298,7 +9435,7 @@ class BrowserManager:
     ) -> str:
         if action not in {"status", "accept", "dismiss"}:
             raise BrowserDriverError("dialog action 仅支持 status/accept/dismiss")
-        owner = await self._owner(owner_id)
+        owner = await self._owner(owner_id, session_id)
         async with owner.lock:
             session = self._session(owner, session_id)
             self._require_ai(owner, session)
@@ -9331,7 +9468,7 @@ class BrowserManager:
         *,
         workdir: str = "",
     ) -> str:
-        owner = await self._owner(owner_id)
+        owner = await self._owner(owner_id, session_id)
         async with owner.lock:
             session = self._session(owner, session_id)
             self._require_ai(owner, session)
@@ -9493,7 +9630,7 @@ class BrowserManager:
         if not trusted_user and action not in {"takeover", "pause", "stop"}:
             raise BrowserDriverError("模型不能交还 AI；请由用户在 Crew 浏览器面板操作")
 
-        owner = await self._owner(owner_id)
+        owner = await self._owner(owner_id, session_id)
         if action == "stop":
             sid = str(session_id or "").strip()
             if not sid:
@@ -9688,7 +9825,7 @@ class BrowserManager:
             )
 
     async def close_session(self, owner_id: str, session_id: str) -> None:
-        owner = self._owners.get(str(owner_id or ""))
+        owner = self._get_owner(owner_id, session_id)
         if owner is None:
             return
         async with owner.lock:
@@ -9769,10 +9906,15 @@ class BrowserManager:
         epoch.
         """
         owner_key = str(owner_id or "").strip()
+        for owner in self._account_owners(owner_key):
+            await self._reset_workspace_registration(owner_key, owner.workspace_id)
+
+    async def _reset_workspace_registration(self, owner_key: str, workspace_id: str) -> None:
         if not owner_key:
             raise BrowserDriverError("缺少账号上下文")
+        key = self._workspace_key(owner_key, workspace_id)
         async with self._owners_lock:
-            owner = self._owners.get(owner_key)
+            owner = self._owners.get(key)
             if owner is not None:
                 owner.closing = True
                 owner.actions_blocked = True
@@ -9780,7 +9922,7 @@ class BrowserManager:
         session_ids = {
             session_id
             for account, session_id in self._subscribers
-            if account == owner_key
+            if account == owner_key and self._get_owner(owner_key, session_id) is owner
         }
         if owner is not None:
             async with owner.lock:
@@ -9802,8 +9944,8 @@ class BrowserManager:
                 owner.stop_unconfirmed = False
                 self._clear_native_selection(owner)
             async with self._owners_lock:
-                if self._owners.get(owner_key) is owner:
-                    self._owners.pop(owner_key, None)
+                if self._owners.get(key) is owner:
+                    self._owners.pop(key, None)
                 owner.closed_event.set()
 
         for session_id in session_ids:
@@ -9823,10 +9965,32 @@ class BrowserManager:
         owner_key = str(owner_id or "").strip()
         if not owner_key:
             raise BrowserDriverError("缺少账号上下文")
+        workspaces = {"default", *(owner.workspace_id for owner in self._account_owners(owner_key))}
+        if self._workspace_store is not None:
+            workspaces.update(
+                workspace["id"]
+                for workspace in self._workspace_store.list(owner_account_id=owner_key)
+                if self._workspace_profile(owner_key, workspace["id"]).parent.is_dir()
+            )
+        root = get_owner_runtime_home(owner_key) / "task_workspaces"
+        if root.is_dir():
+            workspaces.update(
+                child.name for child in root.iterdir()
+                if child.is_dir() and (child / ".crew" / "browser").is_dir()
+            )
+        for workspace_id in sorted(workspaces):
+            await self._clear_workspace_data(owner_key, workspace_id)
+        return {"ok": True, "cleared": True, "owner_hash": _hash(owner_key)}
+
+    async def _clear_workspace_data(self, owner_id: str, workspace_id: str) -> dict[str, Any]:
+        owner_key = str(owner_id or "").strip()
+        if not owner_key:
+            raise BrowserDriverError("缺少账号上下文")
+        key = self._workspace_key(owner_key, workspace_id)
         while True:
             wait_for_close: asyncio.Event | None = None
             async with self._owners_lock:
-                owner = self._owners.get(owner_key)
+                owner = self._owners.get(key)
                 if owner is not None and owner.closing:
                     if owner.stop_unconfirmed:
                         # fail-stop 墓碑：owner 保留在 _owners 里、closed_event 也已置位
@@ -9839,13 +10003,13 @@ class BrowserManager:
                     wait_for_close = owner.closed_event
                 else:
                     if owner is None:
-                        home = get_owner_runtime_home(owner_key)
                         owner = _Owner(
                             owner=owner_key,
                             runtime_key=f"crew_{_hash(owner_key)}",
-                            profile_dir=home / "browser" / "profile",
+                            profile_dir=self._workspace_profile(owner_key, workspace_id),
+                            workspace_id=workspace_id,
                         )
-                        self._owners[owner_key] = owner
+                        self._owners[key] = owner
                     # Leave this owner as a tombstone until Session clear,
                     # Host close and artifact cleanup finish; other accounts do
                     # not wait on these account-local operations.
@@ -9874,14 +10038,14 @@ class BrowserManager:
                 if closed is False:
                     raise BrowserDriverError("无法确认账号 Chromium 已关闭")
                 await self._close_owner_locked(owner, close_driver=False)
-                for key in [key for key in self._subscribers if key[0] == owner_key]:
-                    self._subscribers.pop(key, None)
+                for session_id in owner.sessions:
+                    self._subscribers.pop((owner_key, session_id), None)
                 # Electron session.fromPath() retains a process-wide binding to
                 # Profile even after all WebContents are closed. Deleting that
                 # active path is racy on Windows and can recreate partial data.
                 # Host clear_owner_data owns Session storage deletion; Python
                 # removes only Crew-managed non-Session artifacts.
-                browser_root = get_owner_runtime_home(owner_key) / "browser"
+                browser_root = owner.profile_dir.parent
                 for child in (
                     browser_root / "artifacts",
                     browser_root / "download-quarantine",
@@ -9900,10 +10064,10 @@ class BrowserManager:
                 owner.proxy = None
                 owner.initialized = False
             async with self._owners_lock:
-                if cleared and self._owners.get(owner_key) is owner:
-                    self._owners.pop(owner_key, None)
+                if cleared and self._owners.get(key) is owner:
+                    self._owners.pop(key, None)
                     owner.closed_event.set()
-                elif self._owners.get(owner_key) is owner:
+                elif self._owners.get(key) is owner:
                     # Keep the same runtime/profile tombstone available for a
                     # later clear/stop retry, while all ordinary actions remain
                     # fail-closed.
@@ -9912,6 +10076,50 @@ class BrowserManager:
                     owner.actions_blocked = True
                     owner.stop_unconfirmed = True
         return {"ok": True, "cleared": True, "owner_hash": _hash(owner_key)}
+
+    async def delete_workspace_data(self, owner_id: str, workspace_id: str) -> None:
+        if workspace_id in {"default", "wiki"}:
+            raise ValueError("不能删除内置工作空间")
+        self._deleted_workspaces.add((owner_id, workspace_id))
+        key = self._workspace_key(owner_id, workspace_id)
+        current = self._owners.get(key)
+        browser_root = (
+            current.profile_dir if current is not None
+            else self._workspace_profile(owner_id, workspace_id)
+        ).parent
+        if not browser_root.exists() and key not in self._owners:
+            return
+        try:
+            self._validate_cleanup_root(browser_root)
+        except ValueError as exc:
+            raise BrowserDriverError(str(exc)) from exc
+        if (
+            current is None and isinstance(self.driver, ElectronBrowserDriver)
+            and not electron_browser_bridge.connected(f"crew_{_hash(owner_id)}")
+        ):
+            await asyncio.to_thread(shutil.rmtree, browser_root)
+            self._pending_marker(browser_root).unlink(missing_ok=True)
+            self._pending_record(browser_root).unlink(missing_ok=True)
+            return
+        await self._clear_workspace_data(owner_id, workspace_id)
+        marker = self._pending_marker(browser_root)
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        record = self._pending_record(browser_root)
+        record.parent.mkdir(parents=True, exist_ok=True)
+        temporary = record.with_suffix(".tmp")
+        temporary.write_text(json.dumps({"browser_root": str(browser_root)}), encoding="utf-8")
+        temporary.replace(record)
+        marker.touch()
+        try:
+            if browser_root.exists():
+                await asyncio.to_thread(shutil.rmtree, browser_root)
+        except PermissionError:
+            if os.name != "nt":
+                raise
+            log.info("Electron 仍占用已清空的工作空间 Profile，将在下次启动删除: %s", browser_root)
+            return
+        marker.unlink()
+        record.unlink()
 
     def session_for_recording_target(self, owner_id: str, target_id: str) -> str | None:
         """Resolve one exact Host target for recording event routing."""
@@ -9934,9 +10142,8 @@ class BrowserManager:
         if not safe:
             return None
         owner_key = str(owner_id or "")
-        owner = self._owners.get(owner_key)
         matches: set[str] = set()
-        if owner is not None:
+        for owner in self._account_owners(owner_key):
             matches.update(
                 session.session_id
                 for session in owner.sessions.values()
@@ -9951,12 +10158,12 @@ class BrowserManager:
 
     def session_for_target(self, owner_id: str, target_id: str) -> str | None:
         """Resolve one exact Host target to one Crew session in any mode."""
-        owner = self._owners.get(str(owner_id or ""))
         target = str(target_id or "")
-        if owner is None or not target:
+        if not target:
             return None
         matches = [
             session.session_id
+            for owner in self._account_owners(str(owner_id or ""))
             for session in owner.sessions.values()
             if any(tab.target_id == target for tab in session.tabs.values())
         ]
@@ -9969,12 +10176,12 @@ class BrowserManager:
         next Manager tab refresh.  The Host's logical session hash is already
         bound at page creation, so it is the stable route for that interval.
         """
-        owner = self._owners.get(str(owner_id or ""))
         value = str(session_hash or "")
-        if owner is None or re.fullmatch(r"[0-9a-f]{32}", value) is None:
+        if re.fullmatch(r"[0-9a-f]{32}", value) is None:
             return None
         matches = [
             session.session_id
+            for owner in self._account_owners(str(owner_id or ""))
             for session in owner.sessions.values()
             if _hash(session.session_id, 32) == value
         ]
@@ -10112,7 +10319,7 @@ class BrowserManager:
         """Upsert a native Electron download event without taking owner.lock."""
         owner_key = str(owner_id or "")
         session_key = str(session_id or "")
-        owner = self._owners.get(owner_key)
+        owner = self._get_owner(owner_id, session_id)
         session = owner.sessions.get(session_key) if owner else None
         if owner is None or session is None:
             return False
@@ -10184,7 +10391,7 @@ class BrowserManager:
                 fields = self._validated_fill_form_fields(args.get("fields"))
             except BrowserDriverError as exc:
                 return ToolPermissionDecision("deny", str(exc))
-            owner = self._owners.get(owner_id)
+            owner = self._get_owner(owner_id, session_id)
             session = owner.sessions.get(session_id) if owner else None
             if session is None:
                 return ToolPermissionDecision(
@@ -10216,7 +10423,7 @@ class BrowserManager:
             "browser_hover",
             "browser_drop",
         }:
-            owner = self._owners.get(owner_id)
+            owner = self._get_owner(owner_id, session_id)
             session = owner.sessions.get(session_id) if owner else None
             ref = str(args.get("ref") or "")
             if session is None or ref not in session.refs:
@@ -10243,7 +10450,7 @@ class BrowserManager:
         elif tool_name == "browser_click" and args.get("screenshot_id"):
             return None
         elif tool_name == "browser_click":
-            owner = self._owners.get(owner_id)
+            owner = self._get_owner(owner_id, session_id)
             session = owner.sessions.get(session_id) if owner else None
             ref = str(args.get("ref") or "")
             if session is None or ref not in session.refs:
@@ -10263,7 +10470,7 @@ class BrowserManager:
             # There is no href-direct-open substitution and no approval pause.
             return None
         elif tool_name == "browser_drag":
-            owner = self._owners.get(owner_id)
+            owner = self._get_owner(owner_id, session_id)
             session = owner.sessions.get(session_id) if owner else None
             start_ref = str(args.get("start_ref") or "")
             end_ref = str(args.get("end_ref") or "")
@@ -10277,7 +10484,7 @@ class BrowserManager:
                 )
             return None
         elif tool_name == "browser_type":
-            owner = self._owners.get(owner_id)
+            owner = self._get_owner(owner_id, session_id)
             session = owner.sessions.get(session_id) if owner else None
             ref = str(args.get("ref") or "")
             text = args.get("text")
@@ -10304,7 +10511,7 @@ class BrowserManager:
                     "deny", f"{tool_name.removeprefix('browser_')} 不接受 ref"
                 )
             if ref:
-                owner = self._owners.get(owner_id)
+                owner = self._get_owner(owner_id, session_id)
                 session = owner.sessions.get(session_id) if owner else None
                 if session is None or ref not in session.refs:
                     return ToolPermissionDecision(
@@ -10347,7 +10554,7 @@ class BrowserManager:
         return False
 
     def state(self, owner_id: str, session_id: str) -> dict[str, Any]:
-        owner = self._owners.get(str(owner_id or ""))
+        owner = self._get_owner(owner_id, session_id)
         session = owner.sessions.get(str(session_id or "")) if owner else None
         if owner is None or session is None:
             state = BrowserPageState(_hash(owner_id), _hash(session_id))
@@ -10402,7 +10609,7 @@ class BrowserManager:
     async def human_command(
         self, owner_id: str, session_id: str, action: str, value: str = ""
     ) -> dict[str, Any]:
-        owner = await self._owner(owner_id)
+        owner = await self._owner(owner_id, session_id)
         async with owner.lock:
             session = self._session(owner, session_id)
             if session.mode != "human":
@@ -10492,7 +10699,7 @@ class BrowserManager:
             ):
                 raise BrowserDriverError("本地预览仅允许当前工作区内的 HTML 文件")
 
-        owner = await self._owner(owner_id)
+        owner = await self._owner(owner_id, session_id)
         async with owner.control_lock:
             return await self._open_for_user_with_control(
                 owner,

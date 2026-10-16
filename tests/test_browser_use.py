@@ -473,8 +473,8 @@ async def test_clear_browser_data_only_clears_current_account_artifacts(browser,
     manager, _driver = browser
     await manager.navigate("owner-a", "session", "https://example.com")
     await manager.navigate("owner-b", "session", "https://example.com")
-    owner_a = tmp_path / "accounts" / "owner-a" / "browser" / "profile"
-    owner_b = tmp_path / "accounts" / "owner-b" / "browser" / "profile"
+    owner_a = manager._workspace_profile("owner-a", "default")
+    owner_b = manager._workspace_profile("owner-b", "default")
     owner_a.mkdir(parents=True)
     owner_b.mkdir(parents=True)
     (owner_a / "Cookies").write_text("a", encoding="utf-8")
