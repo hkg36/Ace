@@ -20,6 +20,7 @@ from crew.browser.manager import BrowserManager, _bounded
 from crew.browser.manager import _ReplayLease as _SuspendedLease
 from crew.browser.types import BrowserConfig
 from crew.core.runctx import current_tool_call_id
+from crew.state.home import owner_path_segment
 
 
 def _png_header(width: int, height: int) -> bytes:
@@ -512,7 +513,7 @@ class TransitionReviewDriver(ReviewDriver):
 def browser_env(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "crew.browser.manager.get_owner_runtime_home",
-        lambda owner: tmp_path / "accounts" / str(owner),
+        lambda owner: tmp_path / "accounts" / owner_path_segment(str(owner)),
     )
     monkeypatch.setattr("crew.browser.manager.LoopbackPolicyProxy", FakeProxy)
     return tmp_path
@@ -2168,7 +2169,7 @@ def test_default_runtime_keeps_playwright_inputs_beyond_legacy_product_caps(tmp_
 async def test_upload_staging_snapshots_files_and_directories_then_cleans(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "crew.browser.manager.get_owner_runtime_home",
-        lambda owner: tmp_path / "accounts" / str(owner),
+        lambda owner: tmp_path / "accounts" / owner_path_segment(str(owner)),
     )
     source = tmp_path / "source"
     nested = source / "nested"
@@ -2204,7 +2205,7 @@ async def test_upload_staging_rejects_symlinks_inside_directory(tmp_path, monkey
         pytest.skip("symlinks unavailable")
     monkeypatch.setattr(
         "crew.browser.manager.get_owner_runtime_home",
-        lambda owner: tmp_path / "accounts" / str(owner),
+        lambda owner: tmp_path / "accounts" / owner_path_segment(str(owner)),
     )
     source = tmp_path / "source"
     source.mkdir()

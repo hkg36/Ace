@@ -25,6 +25,7 @@ from crew.core.runctx import (
 )
 from crew.state.access_control import AccessControlConfig
 from crew.state.config import Config
+from crew.state.home import owner_path_segment
 from crew.state.plugin_preferences import PluginPreferencesStore
 from crew.tools.registry import Registry
 from crew.core.types import ToolCall
@@ -105,7 +106,7 @@ async def plugin_tool(tmp_path, monkeypatch):
     """真实 BrowserManager + FakeDriver + 真偏好库上的 BrowserUseTool。"""
     monkeypatch.setattr(
         "crew.browser.manager.get_owner_runtime_home",
-        lambda owner: tmp_path / "accounts" / str(owner),
+        lambda owner: tmp_path / "accounts" / owner_path_segment(str(owner)),
     )
     driver = FakeBrowserDriver()
     manager = BrowserManager(BrowserConfig(), driver)
@@ -997,8 +998,10 @@ async def test_plugin_click_keeps_automatic_download_in_public_session_state(
             "source": "automatic",
         }
     ]
-    assert public_state["downloads"][0]["path"].endswith(
-        "/downloads/browser/export.xlsx"
+    assert Path(public_state["downloads"][0]["path"]).parts[-3:] == (
+        "downloads",
+        "browser",
+        "export.xlsx",
     )
 
 
@@ -1503,7 +1506,7 @@ async def test_screenshot_exports_png_to_task_downloads(plugin_tool, ctx_vars):
 
     path = await tool.handler({"action": "screenshot", "filename": "home"})
     assert path.endswith("home.png")
-    assert "downloads/browser" in path
+    assert Path(path).parts[-3:-1] == ("downloads", "browser")
     assert "--settled" in next(
         args for command, args in reversed(driver.calls) if command == "screenshot"
     )
@@ -1512,7 +1515,7 @@ async def test_screenshot_exports_png_to_task_downloads(plugin_tool, ctx_vars):
     # 默认文件名自动生成且补 .png 后缀
     auto = await tool.handler({"action": "screenshot"})
     assert auto.content.endswith(".png")
-    assert "downloads/browser" in auto.content
+    assert Path(auto.content).parts[-3:-1] == ("downloads", "browser")
     assert auto.media[0].mime_type == "image/png"
     assert auto.media[0].path == auto.content
 
