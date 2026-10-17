@@ -208,6 +208,136 @@ def test_owner_runtime_home_and_workspace_are_owner_scoped(tmp_path, monkeypatch
     assert ws_a != ws_b
 
 
+def test_local_runtime_uses_default_workspace(tmp_path, monkeypatch):
+    monkeypatch.setenv("CREW_HOME", str(tmp_path))
+    monkeypatch.delenv("CREW_TASK_WORKSPACE_ROOT", raising=False)
+    target = tmp_path / "default_workspace"
+    assert get_owner_runtime_home("local", create=False) == target
+    assert not target.exists()
+    assert get_owner_runtime_home("local") == target
+    assert get_owner_runtime_home("local") == target
+    assert resolve_writable_env_path("local") == target / ".env"
+    assert config_module.owner_overlay_config_path("local") == target / "config.yaml"
+    assert task_workspace_path("default", owner_account_id="local") == (
+        target / "task_workspaces" / "default"
+    )
+    values = runtime_env_overrides(owner_account_id="local")
+    assert values["CREW_HOME"] == str(tmp_path)
+    assert values["CREW_OWNER_HOME"] == str(target)
+    assert values["CREW_ENV_FILE"] == str(target / ".env")
+    assert not (tmp_path / "accounts").exists()
+    assert get_owner_runtime_home("dev:dev") == (
+        tmp_path / "accounts" / owner_path_segment("dev:dev")
+    )
+
+
+def test_local_runtime_uses_context_owner(tmp_path, monkeypatch):
+    from crew.core.runctx import current_owner_account_id
+
+    monkeypatch.setenv("CREW_HOME", str(tmp_path))
+    token = current_owner_account_id.set("local")
+    try:
+        assert get_owner_runtime_home() == tmp_path / "default_workspace"
+    finally:
+        current_owner_account_id.reset(token)
+    token = current_owner_account_id.set("")
+    try:
+        assert get_owner_runtime_home() == tmp_path
+    finally:
+        current_owner_account_id.reset(token)
+
+
+def test_local_runtime_migration_is_thread_safe(tmp_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+
+    source = tmp_path / "accounts" / owner_path_segment("local")
+    source.mkdir(parents=True)
+    (source / "config.yaml").write_text("preserved", encoding="utf-8")
+    monkeypatch.setenv("CREW_HOME", str(tmp_path))
+    target = tmp_path / "default_workspace"
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        results = list(pool.map(get_owner_runtime_home, ["local"] * 8))
+    assert results == [target] * 8
+    assert (target / "config.yaml").read_text(encoding="utf-8") == "preserved"
+    assert not source.exists()
+
+
+@pytest.mark.parametrize("segment", [owner_path_segment("local"), "local"])
+@pytest.mark.parametrize("direct_home", [False, True])
+def test_local_runtime_migrates_old_directory(tmp_path, monkeypatch, segment, direct_home):
+    source = tmp_path / "accounts" / segment
+    source.mkdir(parents=True)
+    (source / ".env").write_text("TEST_KEY=preserved\n", encoding="utf-8")
+    nested = source / "task_workspaces" / "default" / "result.bin"
+    nested.parent.mkdir(parents=True)
+    nested.write_bytes(b"\x00\xffresult")
+    monkeypatch.setenv("CREW_HOME", str(source if direct_home else tmp_path))
+    target = tmp_path / "default_workspace"
+    assert get_owner_runtime_home("local", create=False) == target
+    assert source.exists()
+    assert not target.exists()
+    assert get_owner_runtime_home("local") == target
+    assert not source.exists()
+    assert (target / ".env").read_text(encoding="utf-8") == "TEST_KEY=preserved\n"
+    assert (target / "task_workspaces" / "default" / "result.bin").read_bytes() == b"\x00\xffresult"
+    assert get_owner_runtime_home("local") == target
+    assert runtime_env_overrides(owner_account_id="local")["CREW_HOME"] == str(tmp_path)
+
+
+def test_local_runtime_reuses_direct_default_workspace(tmp_path, monkeypatch):
+    target = tmp_path / "default_workspace"
+    monkeypatch.setenv("CREW_HOME", str(target))
+    assert get_owner_runtime_home("local") == target
+    assert runtime_env_overrides(owner_account_id="local")["CREW_HOME"] == str(tmp_path)
+    assert not (target / "default_workspace").exists()
+
+
+@pytest.mark.parametrize("conflict", ["default_workspace", "accounts/local"])
+def test_local_runtime_migration_never_overwrites(tmp_path, monkeypatch, conflict):
+    source = tmp_path / "accounts" / owner_path_segment("local")
+    source.mkdir(parents=True)
+    (source / ".env").write_text("preserve source", encoding="utf-8")
+    other = tmp_path / conflict
+    other.mkdir(parents=True)
+    (other / ".env").write_text("preserve target", encoding="utf-8")
+    monkeypatch.setenv("CREW_HOME", str(tmp_path))
+    with pytest.raises(FileExistsError, match="迁移冲突"):
+        get_owner_runtime_home("local")
+    assert (source / ".env").read_text(encoding="utf-8") == "preserve source"
+    assert (other / ".env").read_text(encoding="utf-8") == "preserve target"
+
+
+def test_local_runtime_migration_surfaces_rename_failure(tmp_path, monkeypatch):
+    source = tmp_path / "accounts" / owner_path_segment("local")
+    source.mkdir(parents=True)
+    monkeypatch.setenv("CREW_HOME", str(tmp_path))
+
+    def fail_rename(self, target):
+        raise PermissionError("locked")
+
+    monkeypatch.setattr(Path, "rename", fail_rename)
+    with pytest.raises(OSError, match="默认工作区迁移失败"):
+        get_owner_runtime_home("local")
+    assert source.is_dir()
+    assert not (tmp_path / "default_workspace").exists()
+
+
+def test_local_runtime_migration_rejects_linked_directory(tmp_path, monkeypatch):
+    source = tmp_path / "accounts" / owner_path_segment("local")
+    source.parent.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    try:
+        source.symlink_to(outside, target_is_directory=True)
+    except OSError:
+        pytest.skip("Directory symlinks unavailable")
+    monkeypatch.setenv("CREW_HOME", str(tmp_path))
+    with pytest.raises(ValueError, match="拒绝迁移"):
+        get_owner_runtime_home("local")
+    assert outside.is_dir()
+    assert not (tmp_path / "default_workspace").exists()
+
+
 def test_owner_runtime_env_file_is_owner_scoped(tmp_path, monkeypatch):
     home = tmp_path / ".crew"
     monkeypatch.setenv("CREW_HOME", str(home))

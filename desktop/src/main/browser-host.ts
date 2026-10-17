@@ -13,6 +13,7 @@ import {
 } from 'node:fs/promises';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
+import { DEFAULT_WORKSPACE_DIRNAME } from './runtime-home';
 
 import {
   WebContentsView,
@@ -2258,17 +2259,22 @@ function validateProfileOwnership(profile: string, expectedRuntimeKey?: string):
   const ownerDir = workspaceScoped ? path.dirname(workspacesDir) : containerDir;
   const accountsDir = path.dirname(ownerDir);
   const ownerMatch = /^acct_([0-9a-f]{16})$/i.exec(path.basename(ownerDir));
+  const defaultWorkspace = !projectScoped
+    && path.basename(ownerDir).toLocaleLowerCase() === DEFAULT_WORKSPACE_DIRNAME;
+  const ownerDigest = defaultWorkspace
+    ? createHash('sha256').update('local', 'utf8').digest('hex').slice(0, 12)
+    : ownerMatch?.[1].slice(0, 12).toLocaleLowerCase();
   if (
     profileName.toLocaleLowerCase() !== 'profile'
     || (!projectScoped && path.basename(browserDir).toLocaleLowerCase() !== 'browser')
-    || path.basename(accountsDir).toLocaleLowerCase() !== 'accounts'
-    || !ownerMatch
+    || (!defaultWorkspace && path.basename(accountsDir).toLocaleLowerCase() !== 'accounts')
+    || !ownerDigest
   ) {
     throw new BrowserHostError('浏览器 Profile 不属于账号隔离目录', {
       code: 'invalid_profile',
     });
   }
-  if (expectedRuntimeKey && ownerMatch[1].slice(0, 12).toLocaleLowerCase() !== expectedRuntimeKey.split(':')[0].slice(5)) {
+  if (expectedRuntimeKey && ownerDigest !== expectedRuntimeKey.split(':')[0].slice(5)) {
     throw new BrowserHostError('浏览器 Profile 与账号标识不匹配', {
       code: 'profile_owner_mismatch',
     });

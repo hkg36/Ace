@@ -15,6 +15,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as net from 'net';
 import { createHash } from 'crypto';
+import { runtimeHomePath, runtimeHomeSegment } from './runtime-home';
 import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
 import WebSocket from 'ws';
 import { BrowserHost, BrowserHostError } from './browser-host';
@@ -360,8 +361,7 @@ function currentBrowserRuntimeKey(): string | null {
 function currentCrewFileOwnerSegment(): string | null {
   const owner = currentBrowserOwnerId();
   if (!owner) return null;
-  const digest = createHash('sha256').update(owner, 'utf8').digest('hex').slice(0, 16);
-  return `acct_${digest}`;
+  return runtimeHomeSegment(owner);
 }
 
 /** Authorize one existing renderer-selected artifact to the active account. */
@@ -2511,7 +2511,7 @@ function registerIpc() {
     const source = path.resolve(args.sourcePath);
     const ownerSegment = currentCrewFileOwnerSegment();
     if (!ownerSegment) throw new Error(`${IPC_ARG_VALIDATION_FAILED}: no active site owner`);
-    const sitesRoot = path.resolve(activeGatewayCrewHome(), 'accounts', ownerSegment, 'sites');
+    const sitesRoot = path.join(runtimeHomePath(activeGatewayCrewHome(), ownerSegment), 'sites');
     const relative = path.relative(sitesRoot, source);
     const segments = relative.split(path.sep);
     const validLocation = (

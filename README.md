@@ -443,13 +443,15 @@ python scripts/run_e2e_batch.py --case write_file --report-dir build/e2e
 | `config/config.yaml` | 本地模型、Gateway、MCP 和工具配置 | 否 |
 | `config/.env.example` | 环境变量模板，不含真实值 | 是 |
 | 项目根目录 `.env` / `config/.env` | 手工配置或 CLI 使用的 API Key、Token 等本地敏感配置 | 否 |
-| `${CREW_HOME}/accounts/acct_<hash(local)>/.env` | `auth.mode: local` 时由设置页保存的模型 API Key；默认 `${CREW_HOME}` 为 `~/.Crew` | 否 |
+| `${CREW_HOME}/default_workspace/.env` | 默认工作区中由设置页保存的模型 API Key；默认 `${CREW_HOME}` 为 `~/.Crew` | 否 |
 | `${DESKTOP_USER_DATA}/gateway-dev/accounts/acct_<hash(dev:dev)>/.env` | `npm run dev` 的隔离开发环境中由设置页保存的模型 API Key | 否 |
 | `${CREW_HOME}/accounts/acct_<hash(providerId:userId)>/.env` | `auth.mode: remote` 时由设置页保存的模型 API Key，每个登录用户相互隔离 | 否 |
 | `~/.Crew/` / `.Crew/` / `.crew/` | 用户配置、会话和运行时数据 | 否 |
 | `crew_data/` | 本地数据库 | 否 |
 
-`${CREW_HOME}` 可通过同名环境变量覆盖；未覆盖时，示例配置中的 `.Crew` 会解析为用户主目录下的 `~/.Crew`。`${DESKTOP_USER_DATA}` 是 Electron 为当前 Desktop 应用分配的用户数据目录。`acct_<hash(...)>` 是由 owner ID 稳定计算出的隐私保护目录名，磁盘上不会直接出现 `local`、用户 ID 或手机号；远程模式下的 `providerId:userId` 仅用于本机派生该目录名。
+`${CREW_HOME}` 可通过同名环境变量覆盖；未覆盖时，示例配置中的 `.Crew` 会解析为用户主目录下的 `~/.Crew`。`${DESKTOP_USER_DATA}` 是 Electron 为当前 Desktop 应用分配的用户数据目录。默认工作区的配置、记忆、上传文件、任务产物及浏览器数据统一保存在 `${CREW_HOME}/default_workspace`。开发隔离环境和远程用户仍使用由 owner ID 稳定计算的 `acct_<hash(...)>` 隐私保护目录名。
+
+升级后首次初始化默认工作区时，会将旧的 `${CREW_HOME}/accounts/acct_<hash(local)>`（或更早的 `accounts/local`）整目录移动到 `default_workspace`。若新旧目录同时存在，或同时发现两个旧目录，会明确报错并停止迁移，不覆盖或合并数据；请先备份并处理冲突后重启。迁移失败也会报错，不会静默创建空工作区。迁移前请关闭旧版进程；手工配置或历史内容中的绝对路径不会自动改写。
 
 ## 🧱 代码结构
 

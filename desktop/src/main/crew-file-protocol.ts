@@ -3,7 +3,8 @@
  *
  * 安全边界：
  * - 只允许 GET / HEAD；
- * - 路径必须落在 <crewHome>/accounts/<acct>/{task_workspaces,uploads}/ 或
+ * - 路径必须落在 <crewHome>/default_workspace/{task_workspaces,uploads}/、
+ *   <crewHome>/accounts/<acct>/{task_workspaces,uploads}/ 或
  *   <crewHome>/tmp/ 之内（resolve + relative 校验，realpath 后再校验一次，拒绝符号链接逃逸）；
  * - 仅放行常见图片扩展名，Content-Type 按扩展名给定并加 nosniff。
  */
@@ -11,6 +12,7 @@
 import { protocol } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
+import { DEFAULT_WORKSPACE_DIRNAME, runtimeHomePath } from './runtime-home';
 
 export const CREW_FILE_SCHEME = 'crew-file';
 
@@ -90,31 +92,35 @@ export function resolveOwnedFilePath(
     || crewHome.length > 4_096
     || ownerSegment.length > 64
     || !path.isAbsolute(rawPath)
-    || !/^acct_[0-9a-f]{16}$/i.test(ownerSegment)
+    || (ownerSegment !== DEFAULT_WORKSPACE_DIRNAME && !/^acct_[0-9a-f]{16}$/i.test(ownerSegment))
   ) {
     return null;
   }
 
-  const accountsRoot = path.join(path.resolve(crewHome), 'accounts');
+  const ownerRoot = runtimeHomePath(crewHome, ownerSegment);
+  const parentRoot = path.dirname(ownerRoot);
   const resolved = path.resolve(rawPath);
   let real: string;
-  let realAccountsRoot: string;
+  let realParentRoot: string;
   let realOwnerRoot: string;
   try {
-    realAccountsRoot = fs.realpathSync(accountsRoot);
-    realOwnerRoot = fs.realpathSync(path.join(realAccountsRoot, ownerSegment));
+    realParentRoot = fs.realpathSync(parentRoot);
+    realOwnerRoot = fs.realpathSync(path.join(realParentRoot, ownerSegment));
     real = fs.realpathSync(resolved);
   } catch {
     return null;
   }
-  if (!samePath(realOwnerRoot, path.join(realAccountsRoot, ownerSegment))) return null;
-  if (!isWithin(realAccountsRoot, realOwnerRoot)) return null;
+  if (!samePath(realOwnerRoot, path.join(realParentRoot, ownerSegment))) return null;
+  if (!isWithin(realParentRoot, realOwnerRoot)) return null;
 
   const allowedRoots = [
     resolveCanonicalOwnedRoot(realOwnerRoot, 'task_workspaces'),
     resolveCanonicalOwnedRoot(realOwnerRoot, 'uploads'),
     ...(includeSharedTmp
-      ? [resolveCanonicalCrewHomeRoot(path.dirname(realAccountsRoot), 'tmp')]
+      ? [resolveCanonicalCrewHomeRoot(
+        ownerSegment === DEFAULT_WORKSPACE_DIRNAME ? realParentRoot : path.dirname(realParentRoot),
+        'tmp',
+      )]
       : []),
   ].filter((root): root is string => Boolean(root));
   if (!allowedRoots.some((root) => isWithin(root, real))) return null;

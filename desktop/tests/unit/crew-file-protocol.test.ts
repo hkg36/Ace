@@ -6,6 +6,7 @@ import path from 'node:path';
 import {
   readResolvedCrewFile,
   resolveCrewFilePath,
+  resolveOwnedFilePath,
 } from '../../src/main/crew-file-protocol';
 
 let crewHome = '';
@@ -37,6 +38,52 @@ afterAll(() => {
 const urlOf = (p: string) => `crew-file://img/${encodeURIComponent(p)}`;
 
 describe('resolveCrewFilePath', () => {
+  it('serves local artifacts without accounts and preserves owner boundaries', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-file-default-'));
+    try {
+      for (const segment of ['task_workspaces', 'uploads']) {
+        const file = path.join(root, 'default_workspace', segment, 'image.png');
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(file, 'image');
+        expect(resolveOwnedFilePath(file, root, 'default_workspace')?.filePath)
+          .toBe(fs.realpathSync(file));
+        expect(resolveCrewFilePath(urlOf(file), root, 'default_workspace')?.contentType)
+          .toBe('image/png');
+        expect(resolveOwnedFilePath(file, root, OWNER_SEGMENT)).toBeNull();
+      }
+      const shared = path.join(root, 'tmp', 'channel.png');
+      fs.mkdirSync(path.dirname(shared));
+      fs.writeFileSync(shared, 'image');
+      expect(resolveCrewFilePath(urlOf(shared), root, 'default_workspace')).not.toBeNull();
+      expect(resolveOwnedFilePath(shared, root, 'default_workspace')).toBeNull();
+      expect(fs.existsSync(path.join(root, 'accounts'))).toBe(false);
+      const privateFile = path.join(root, 'default_workspace', 'secret.png');
+      fs.writeFileSync(privateFile, 'private');
+      expect(resolveCrewFilePath(urlOf(privateFile), root, 'default_workspace')).toBeNull();
+      const remoteFile = path.join(root, 'accounts', OWNER_SEGMENT, 'uploads', 'remote.png');
+      fs.mkdirSync(path.dirname(remoteFile), { recursive: true });
+      fs.writeFileSync(remoteFile, 'remote');
+      expect(resolveOwnedFilePath(remoteFile, root, 'default_workspace')).toBeNull();
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects a default_workspace directory linked to another owner', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-file-default-link-'));
+    try {
+      const owner = path.join(root, 'accounts', OWNER_SEGMENT);
+      const file = path.join(owner, 'uploads', 'other.png');
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, 'other');
+      fs.symlinkSync(owner, path.join(root, 'default_workspace'), 'junction');
+      const alias = path.join(root, 'default_workspace', 'uploads', 'other.png');
+      expect(resolveOwnedFilePath(alias, root, 'default_workspace')).toBeNull();
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('放行 task_workspaces 内的图片文件', () => {
     const resolved = resolveCrewFilePath(urlOf(pngPath), crewHome, OWNER_SEGMENT);
     expect(resolved?.filePath).toBe(fs.realpathSync(pngPath));

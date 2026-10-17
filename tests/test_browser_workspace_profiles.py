@@ -62,6 +62,26 @@ async def test_profiles_and_runtime_are_shared_only_inside_one_workspace(workspa
         await manager.aclose()
 
 
+async def test_default_workspace_profile_and_cleanup(workspace_browser, tmp_path):
+    manager, driver = workspace_browser
+    try:
+        owner = await manager._owner("local", "a1")
+        expected = (
+            tmp_path / "default_workspace" / "task_workspaces"
+            / "project-a" / ".crew" / "browser" / "profile"
+        )
+        assert owner.profile_dir == expected
+        expected.mkdir(parents=True)
+        (expected / "Cookies").write_text("private")
+        BrowserManager._validate_cleanup_root(expected.parent)
+        await manager.delete_workspace_data("local", "project-a")
+        assert driver.cleared == [expected]
+        assert not expected.parent.exists()
+        assert not (tmp_path / "accounts").exists()
+    finally:
+        await manager.aclose()
+
+
 async def test_host_events_and_state_find_sessions_across_workspaces(workspace_browser):
     manager, _ = workspace_browser
     try:

@@ -2951,6 +2951,27 @@ describe('BrowserHost', () => {
     await host.dispose();
   });
 
+  it('accepts default_workspace profiles only for the local runtime', async () => {
+    const host = new BrowserHost(() => fakeWindow());
+    const profile = path.join(tempRoot, 'default_workspace', 'task_workspaces', 'default', '.crew', 'browser', 'profile');
+    await mkdir(profile, { recursive: true });
+    const params = {
+      profile_dir: profile, command: 'tab', args: ['list'], proxy_url: PROXY_URL,
+    };
+    try {
+      await expect(host.handleRpc({
+        runtime_key: RUNTIME_KEY, method: 'execute', params,
+      })).rejects.toMatchObject({ code: 'profile_owner_mismatch' });
+      const localKey = `crew_${createHash('sha256').update('local').digest('hex').slice(0, 12)}`;
+      await expect(host.handleRpc({
+        runtime_key: localKey, method: 'execute', params,
+      })).resolves.toBeDefined();
+      expect(electron.sessions).toHaveLength(1);
+    } finally {
+      await host.dispose();
+    }
+  });
+
   it.each(['managed', 'project'])('isolates persistent Sessions and lifecycle operations in %s workspaces', async (layout) => {
     const window = fakeWindow();
     const host = new BrowserHost(() => window);

@@ -10,7 +10,8 @@ Home 目录默认放在项目根目录下 {DEFAULT_HOME_DIRNAME}/，可通过 CR
     USER.md            — 用户画像（注入 volatile 层）
   skills/              — 用户自定义 skills（每个子目录一个 SKILL.md）
   agents/default/      — 默认单 Agent 配置空间
-  accounts/acct_xxx/    — owner 级私有 runtime home（目录名由 owner_account_id hash 派生）
+  default_workspace/   — 默认本地 runtime home
+  accounts/acct_xxx/    — 其他 owner 的私有 runtime home（目录名由 owner_account_id hash 派生）
 
 任务产物目录默认是 {DEFAULT_HOME_DIRNAME}/task_workspaces/，不放在 crew_home 下；可用
 CREW_TASK_WORKSPACE_ROOT 覆盖。
@@ -42,9 +43,11 @@ else:
 DEFAULT_HOME_DIRNAME = ".Crew"
 OWNER_DIR_HASH_CHARS = 16
 OWNER_DIR_PREFIX = "acct_"
+DEFAULT_WORKSPACE_DIRNAME = "default_workspace"
 WINDOWS_WORKSPACE_PATH_BUDGET = 240
 POSIX_WORKSPACE_PATH_BUDGET = 4096
 _ENV_LOCK = threading.RLock()
+_HOME_LOCK = threading.RLock()
 _RUNTIME_ENV_BASELINE: dict[str, str | None] = {}
 _RUNTIME_ENV_KEYS: set[str] = set()
 _FILE_CACHE: dict[str, tuple[tuple[int, int] | None, object]] = {}
@@ -376,12 +379,24 @@ def get_owner_runtime_home(
 ) -> Path:
     """返回 owner 级运行时 home。
 
-    - 传入 owner 时：``{CREW_HOME}/accounts/{owner_path_segment(owner)}/``
+    - local：``{CREW_HOME}/default_workspace/``（自动迁移旧本地目录）
+    - 其他 owner：``{CREW_HOME}/accounts/{owner_path_segment(owner)}/``
     - 未传入且当前上下文存在 owner 时：同上
     - 无 owner 时：回退基础 ``CREW_HOME``，保持 CLI / 启动期兼容
     """
     owner = str(owner_account_id or _current_owner_account_id() or "").strip()
     base = get_crew_home()
+    _validate_no_repeated_account_segment(base, owner_account_id=owner)
+    if owner == "local":
+        with _HOME_LOCK:
+            if _is_owner_runtime_home(base, owner):
+                base = base.parent.parent
+            elif base.name == DEFAULT_WORKSPACE_DIRNAME:
+                base = base.parent
+            path = _default_workspace_for_base(base, create=create)
+            if create:
+                path.mkdir(parents=True, exist_ok=True)
+            return path
     if not owner:
         path = base
     elif _is_owner_runtime_home(base, owner):
@@ -410,6 +425,11 @@ def runtime_env_overrides(
     owner_home = get_owner_runtime_home(owner_account_id).expanduser().resolve()
     env_path = (Path(env_file).expanduser() if env_file else owner_home / ".env").resolve()
     owner = str(owner_account_id or _current_owner_account_id() or "").strip()
+    if owner == "local" and (
+        _is_owner_runtime_home(crew_home, owner)
+        or crew_home.name == DEFAULT_WORKSPACE_DIRNAME
+    ):
+        crew_home = owner_home.parent
     values: dict[str, str] = {
         # CREW_HOME 是安装/基础 home，不能在 owner 场景下改成 owner home。
         # 否则子进程再次解析 owner home 时会继续追加 accounts/<owner>。
@@ -706,6 +726,35 @@ def _reject_path_like_owner_id(owner_account_id: str) -> None:
 def _legacy_owner_path_segment(owner_account_id: str) -> str:
     """旧版本 owner 目录名；仅用于兼容迁移和污染环境识别。"""
     return safe_path_segment(owner_account_id, "legacy")
+
+
+def _default_workspace_for_base(base: Path, *, create: bool) -> Path:
+    target = base / DEFAULT_WORKSPACE_DIRNAME
+    if not create:
+        return target
+    candidates = [
+        base / "accounts" / owner_path_segment("local"),
+        base / "accounts" / _legacy_owner_path_segment("local"),
+    ]
+    legacy = [path for path in candidates if path.exists() or path.is_symlink()]
+    if not legacy:
+        return target
+    if len(legacy) > 1 or target.exists() or target.is_symlink():
+        raise FileExistsError(
+            f"默认工作区迁移冲突，请先备份并处理新旧目录，禁止覆盖：{legacy} -> {target}"
+        )
+    source = legacy[0]
+    if (
+        not source.is_dir()
+        or source.resolve() != base.resolve() / "accounts" / source.name
+    ):
+        raise ValueError(f"默认工作区旧目录不是普通目录或包含目录链接，拒绝迁移：{source}")
+    try:
+        source.rename(target)
+    except OSError as exc:
+        raise OSError(f"默认工作区迁移失败：{source} -> {target}: {exc}") from exc
+    logger.info("已迁移默认工作区: %s -> %s", source, target)
+    return target
 
 
 def _owner_runtime_home_for_base(base: Path, owner_account_id: str, *, create: bool) -> Path:

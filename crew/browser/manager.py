@@ -36,7 +36,13 @@ from crew.browser.security import (
 from crew.browser.types import BrowserConfig, BrowserPageState, BrowserRef
 from crew.core.types import MediaPart, ToolOutput, ToolPermissionDecision
 from crew.core.interfaces import WorkspaceStore
-from crew.state.home import get_crew_home, get_owner_runtime_home, owner_path_segment, safe_path_segment
+from crew.state.home import (
+    DEFAULT_WORKSPACE_DIRNAME,
+    get_crew_home,
+    get_owner_runtime_home,
+    owner_path_segment,
+    safe_path_segment,
+)
 from crew.state.logging import get_logger
 
 log = get_logger("browser.manager")
@@ -503,9 +509,15 @@ class BrowserManager:
     def _validate_cleanup_root(browser_root: Path) -> None:
         parts = browser_root.parts
         managed = (
-            len(parts) >= 7 and parts[-1] == "browser" and parts[-2] == ".crew"
-            and parts[-4] == "task_workspaces" and parts[-6] == "accounts"
-            and re.fullmatch(r"acct_[0-9a-f]{16}", parts[-5]) is not None
+            len(parts) >= 6 and parts[-1] == "browser" and parts[-2] == ".crew"
+            and parts[-4] == "task_workspaces"
+            and (
+                parts[-5] == DEFAULT_WORKSPACE_DIRNAME
+                or (
+                    len(parts) >= 7 and parts[-6] == "accounts"
+                    and re.fullmatch(r"acct_[0-9a-f]{16}", parts[-5]) is not None
+                )
+            )
         )
         project = (
             len(parts) >= 6 and parts[-5:-2] == (".crew", "browser", "accounts")
