@@ -519,8 +519,8 @@ export interface RenderDiffHtmlOptions {
   expands?: DiffRegionExpandMap;
 }
 
-const DIFF_SKIP_CHEV_DOWN = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-const DIFF_SKIP_CHEV_UP = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18 15l-6-6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+const DIFF_SKIP_CHEV_DOWN = `<svg class="mw-icon" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-chevron-down"></use></svg>`;
+const DIFF_SKIP_CHEV_UP = `<svg class="mw-icon" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-chevron-up"></use></svg>`;
 
 /**
  * 生成 Inspector 文件卡片内的 diff HTML（Cursor / Codex 风格）。

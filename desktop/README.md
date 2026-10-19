@@ -86,6 +86,12 @@ npm run dev
 
 ## 开发与验证
 
+界面图标使用本地 Font Awesome Free SVG sprite，不依赖 CDN 或在线字体。
+语义 ID 在 `src/ui/components/icon.ts` 中定义；图形映射位于
+`scripts/generate-icon-sprite.mjs`，修改后运行 `npm run icons:generate` 并提交
+`assets/crew-ui-symbols.svg`。DOM 使用 `createIcon`，HTML 模板使用 `iconMarkup`。
+图标许可和来源见仓库根目录的 `NOTICE`。
+
 ```bash
 npm run dev          # 开发启动
 npm run build        # 构建主进程与渲染层

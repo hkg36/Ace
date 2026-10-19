@@ -58,12 +58,7 @@ function renderCompactionNotice(): HTMLElement {
   notice.setAttribute('role', 'status');
   notice.setAttribute('aria-live', 'polite');
   notice.innerHTML = `
-    <svg class="nav-agent-logo context-compaction-notice__logo" width="18" height="18" viewBox="3 3 18 18" aria-hidden="true">
-      <path class="nav-agent-logo__blob" d="M5.2 13.2c0-4.5 2.9-6.9 6.8-6.9 4.5 0 7 2.8 7 6.2 0 3.8-2.5 5.5-7.2 5.5-4.3 0-6.6-1.4-6.6-4.8Z"></path>
-      <path class="nav-agent-logo__cap" d="M9 6.7c.7-1.1 1.7-1.7 3.1-1.7 1.3 0 2.3.5 3 1.5"></path>
-      <path class="nav-agent-logo__shine" d="M9.6 10.8v1.9M14.4 10.8v1.9"></path>
-      <path class="nav-agent-logo__pixel" d="M18.8 8.2h1.5M19.55 7.45v1.5"></path>
-    </svg>
+    <svg class="mw-icon nav-agent-logo context-compaction-notice__logo" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-agent"></use></svg>
     <strong>正在压缩上下文……</strong>
     <span>如果多次压缩上下文，Agent 的能力会受到影响，建议开启新对话～</span>`;
   return notice;

@@ -88,7 +88,7 @@ export interface ModelSelectPopoverOptions {
   align?: 'start' | 'end';
 }
 
-const MODEL_CHECK_ICON = `<svg class="composer-select-item__check" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>`;
+const MODEL_CHECK_ICON = `<svg class="mw-icon composer-select-item__check" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><use href="#icon-check"></use></svg>`;
 
 /**
  * 打开模型选择浮层（composer-select-popover 视觉与 composer-toolbar 各浮层一致）。

@@ -1,3 +1,5 @@
+import { escapeHtml } from '../../shared/html';
+
 const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
 
 export const MONOCHROME_ICON_CLASS = 'mw-icon--monochrome';
@@ -69,6 +71,31 @@ export const ICON_IDS = [
   'loading-dots',
   'loading-frame',
   'loading-stream',
+  'icon-trash',
+  'icon-upload',
+  'icon-checks',
+  'icon-panel-right',
+  'icon-history',
+  'icon-tag',
+  'icon-graph',
+  'icon-folder-line',
+  'icon-comment',
+  'icon-chevron-right',
+  'icon-arrow-up',
+  'icon-external-link',
+  'icon-mail',
+  'icon-copy',
+  'icon-edit',
+  'icon-info',
+  'icon-user-plus',
+  'icon-record',
+  'icon-pause',
+  'icon-play',
+  'icon-calendar',
+  'icon-bolt',
+  'icon-eye',
+  'icon-list',
+  'icon-brain',
 ] as const;
 
 export type IconId = (typeof ICON_IDS)[number];
@@ -82,7 +109,7 @@ export interface IconOptions {
 }
 
 /**
- * Creates an SVG that references the canonical product sprite.
+ * Creates an SVG that references the local Font Awesome Free sprite.
  *
  * Unknown ids render the error symbol and retain the missing id for diagnostics.
  * Icons are decorative unless the caller supplies a visible-equivalent label.
@@ -107,21 +134,18 @@ export function createIcon(id: IconId | string, options: IconOptions = {}): SVGS
   }
   if (resolvedId !== id) svg.dataset.iconMissing = id;
 
-  if (resolvedId === 'icon-external-agent' || resolvedId === 'icon-crew-agent') {
-    const image = document.createElementNS(SVG_NAMESPACE, 'image');
-    const isCrewAgent = resolvedId === 'icon-crew-agent';
-    image.setAttribute('href', isCrewAgent ? './menubar/default.png' : './external-agent.png');
-    image.setAttribute('x', isCrewAgent ? '0' : '1');
-    image.setAttribute('y', isCrewAgent ? '0' : '1');
-    image.setAttribute('width', isCrewAgent ? '24' : '22');
-    image.setAttribute('height', isCrewAgent ? '24' : '22');
-    image.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-    if (isCrewAgent) svg.classList.add('mw-icon--template-image');
-    svg.append(image);
-  } else {
-    const use = document.createElementNS(SVG_NAMESPACE, 'use');
-    use.setAttribute('href', `#${resolvedId}`);
-    svg.append(use);
-  }
+  const use = document.createElementNS(SVG_NAMESPACE, 'use');
+  use.setAttribute('href', `#${resolvedId}`);
+  svg.append(use);
   return svg;
+}
+
+export function iconMarkup(id: IconId, options: IconOptions = {}): string {
+  const isEntity = /^(?:avatar-|team-|skill-badge|plugin-badge)/.test(id);
+  const className = options.className ? `mw-icon ${options.className}` : 'mw-icon';
+  const size = options.size ? ` width="${options.size}" height="${options.size}"` : '';
+  const accessibility = options.label
+    ? `role="img" aria-label="${escapeHtml(options.label)}"`
+    : 'aria-hidden="true"';
+  return `<svg class="${escapeHtml(className)}" viewBox="0 0 ${isEntity ? 32 : 24} ${isEntity ? 32 : 24}" focusable="false"${size} ${accessibility}><use href="#${id}"></use></svg>`;
 }

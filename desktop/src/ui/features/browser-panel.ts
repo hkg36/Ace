@@ -53,13 +53,12 @@ let takeoverPromptTab = '';
 /** 主框架加载失败（宿主 did-fail-load，已排除 ERR_ABORTED）。非空时收起原生视图、显示错误遮罩。 */
 let loadFailure: { tabLabel: string; url: string; description: string } | null = null;
 
-const CLOSE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg>';
-// 实心圆——通用的「录制」符号，与旁边描边风格的导航图标刻意区分开。
-const RECORD_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6" fill="currentColor" stroke="none"/></svg>';
-const NOTE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
-const PAUSE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4v16M14 4v16"/></svg>';
-const RESUME_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4l13 8-13 8z" fill="currentColor" stroke="none"/></svg>';
-const STOP_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" stroke="none"/></svg>';
+const CLOSE_ICON = '<svg class="mw-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-close"></use></svg>';
+const RECORD_ICON = '<svg class="mw-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-record"></use></svg>';
+const NOTE_ICON = '<svg class="mw-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-edit"></use></svg>';
+const PAUSE_ICON = '<svg class="mw-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-pause"></use></svg>';
+const RESUME_ICON = '<svg class="mw-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-play"></use></svg>';
+const STOP_ICON = '<svg class="mw-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-stop"></use></svg>';
 function currentSession(): string { return state.activeSessionId || ''; }
 
 function defaultState(): BrowserPageState {

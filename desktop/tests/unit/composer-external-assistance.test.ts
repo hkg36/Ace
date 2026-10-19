@@ -27,7 +27,7 @@ function mountComposer(): void {
 async function openExternalEntry(): Promise<void> {
   document.getElementById('chat-craft-btn')?.click();
   const entry = document.querySelector<HTMLElement>('[data-craft-mode="external"]');
-  expect(entry?.querySelector('.mw-icon image')?.getAttribute('href')).toBe('./external-agent.png');
+  expect(entry?.querySelector('.mw-icon use')?.getAttribute('href')).toBe('#icon-external-agent');
   entry?.click();
   await vi.waitFor(() => {
     expect(document.getElementById('chat-external-inline-popover')?.textContent).not.toContain(
@@ -78,13 +78,13 @@ describe('composer 外援入口', () => {
     const disposeToolbar = bindComposerToolbar();
     const trigger = document.getElementById('chat-craft-btn');
 
-    expect(trigger?.querySelector('.mw-context-chip__icon image')?.getAttribute('href')).toBe('./menubar/default.png');
-    expect(trigger?.querySelector('.mw-context-chip__icon use')).toBeNull();
+    expect(trigger?.querySelector('.mw-context-chip__icon use')?.getAttribute('href')).toBe('#icon-crew-agent');
+    expect(trigger?.querySelector('.mw-context-chip__icon image')).toBeNull();
 
     trigger?.click();
     const agentEntry = document.querySelector('[data-craft-mode="craft"]');
-    expect(agentEntry?.querySelector('.mw-icon image')?.getAttribute('href')).toBe('./menubar/default.png');
-    expect(agentEntry?.querySelector('.mw-icon use')).toBeNull();
+    expect(agentEntry?.querySelector('.mw-icon use')?.getAttribute('href')).toBe('#icon-crew-agent');
+    expect(agentEntry?.querySelector('.mw-icon image')).toBeNull();
 
     disposeToolbar();
     view.dispose();
@@ -222,8 +222,8 @@ describe('composer 外援入口', () => {
     expect(document.querySelector('.mw-agent-card')?.textContent).not.toContain('codex-acp');
     expect(document.querySelector('.mw-agent-card')?.textContent).not.toContain('/usr/local/bin/codex');
     const runtimeLogo = document.querySelector('[data-runtime-id] > .mw-icon');
-    expect(runtimeLogo?.querySelector('image')?.getAttribute('href')).toBe('./external-agent.png');
-    expect(runtimeLogo?.querySelector('use')).toBeNull();
+    expect(runtimeLogo?.querySelector('use')?.getAttribute('href')).toBe('#icon-external-agent');
+    expect(runtimeLogo?.querySelector('image')).toBeNull();
     expect(document.querySelector('[data-runtime-id]')?.textContent).toContain('使用');
 
     document.querySelector<HTMLElement>('[data-use-runtime="runtime-codex"]')?.click();

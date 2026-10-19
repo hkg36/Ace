@@ -10,7 +10,7 @@ import {
   type Skill,
 } from '../backend-client';
 import { setRuntimeStyle } from '../components/runtime-style';
-import { createIcon, MONOCHROME_ICON_CLASS } from '../components/icon';
+import { createIcon, iconMarkup, MONOCHROME_ICON_CLASS, type IconId } from '../components/icon';
 import { getSkills, onSkillsChange } from './skill-store';
 import { queryPrimaryComposer } from './composer-scope';
 import { $, $$, ensureSessionBook, escapeHtml, notify, patchBook, state, type ComposerMode } from '../state';
@@ -454,7 +454,7 @@ function mountSelectPopover(
 }
 
 function selectChevron(): string {
-  return `<svg class="composer-select-item__check" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>`;
+  return `<svg class="mw-icon composer-select-item__check" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><use href="#icon-check"></use></svg>`;
 }
 
 function renderComposerModeSwitch(activeMode: ComposerEntry): string {
@@ -469,22 +469,11 @@ function renderComposerModeSwitch(activeMode: ComposerEntry): string {
   `;
 }
 
-function spriteIcon(id: string, className?: string): string {
-  const viewBox = id === 'skill-badge' ? '0 0 32 32' : '0 0 24 24';
-  const classes = ['mw-icon', id === 'icon-crew-agent' ? 'mw-icon--template-image' : '', className]
-    .filter(Boolean)
-    .join(' ');
-  if (id === 'icon-external-agent' || id === 'icon-crew-agent') {
-    const isCrewAgent = id === 'icon-crew-agent';
-    const href = isCrewAgent ? './menubar/default.png' : './external-agent.png';
-    const inset = isCrewAgent ? 0 : 1;
-    const size = isCrewAgent ? 24 : 22;
-    return `<svg class="${classes}" viewBox="${viewBox}" width="18" height="18" aria-hidden="true"><image href="${href}" x="${inset}" y="${inset}" width="${size}" height="${size}" preserveAspectRatio="xMidYMid meet"></image></svg>`;
-  }
-  return `<svg class="${classes}" viewBox="${viewBox}" width="18" height="18" aria-hidden="true"><use href="#${id}"></use></svg>`;
+function spriteIcon(id: IconId, className?: string): string {
+  return iconMarkup(id, { ...(className ? { className } : {}), size: 18 });
 }
 
-const WORKSPACE_FOLDER_ICON = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>`;
+const WORKSPACE_FOLDER_ICON = `<svg class="mw-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><use href="#icon-folder"></use></svg>`;
 
 function renderCraftPopover(): void {
   closeAllPopovers();
@@ -494,8 +483,8 @@ function renderCraftPopover(): void {
   const popover = document.createElement('div');
   popover.id = 'chat-craft-popover';
   const craftIcon = spriteIcon('icon-crew-agent', MONOCHROME_ICON_CLASS);
-  const planIcon = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>`;
-  const askIcon = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`;
+  const planIcon = `<svg class="mw-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><use href="#icon-task"></use></svg>`;
+  const askIcon = `<svg class="mw-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><use href="#icon-comment"></use></svg>`;
   const externalIcon = spriteIcon('icon-external-agent', MONOCHROME_ICON_CLASS);
   const modeIcons: Record<ComposerEntry, string> = {
     craft: craftIcon,

@@ -497,14 +497,14 @@ async function addEmbeddedFiles(
 
 // ── 右栏 Composer 扩展（模型 chip / 附件按钮走面板 contextStaging 槽位） ──
 
-const WIKI_VOID_ICON = `<svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/><circle cx="8.5" cy="11.5" r=".4" fill="currentColor"/><circle cx="12" cy="11.5" r=".4" fill="currentColor"/><circle cx="15.5" cy="11.5" r=".4" fill="currentColor"/></svg>`;
-const WIKI_EXPAND_ICON = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></svg>`;
-const WIKI_NEW_CHAT_ICON = `<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h6"/><path d="M18 2v6"/><path d="M15 5h6"/></svg>`;
-const WIKI_HISTORY_ICON = `<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>`;
-const WIKI_HISTORY_DELETE_ICON = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>`;
-const WIKI_MODEL_ICON = `<svg class="composer-chip__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15" aria-hidden="true"><path d="M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5 4 4 0 0 1-5-5"/><path d="M8.5 8.5v.01"/><path d="M16 15.5v.01"/><path d="M12 12v.01"/></svg>`;
-const WIKI_CHIP_CHEVRON = `<svg class="composer-chip__chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="11" height="11" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>`;
-const WIKI_ATTACH_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>`;
+const WIKI_VOID_ICON = `<svg class="mw-icon" viewBox="0 0 24 24" width="34" height="34" aria-hidden="true"><use href="#icon-comment"></use></svg>`;
+const WIKI_EXPAND_ICON = `<svg class="mw-icon" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><use href="#icon-expand"></use></svg>`;
+const WIKI_NEW_CHAT_ICON = `<svg class="mw-icon" viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><use href="#icon-chat-new"></use></svg>`;
+const WIKI_HISTORY_ICON = `<svg class="mw-icon" viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><use href="#icon-history"></use></svg>`;
+const WIKI_HISTORY_DELETE_ICON = `<svg class="mw-icon" viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><use href="#icon-close"></use></svg>`;
+const WIKI_MODEL_ICON = `<svg class="mw-icon composer-chip__icon" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><use href="#icon-brain"></use></svg>`;
+const WIKI_CHIP_CHEVRON = `<svg class="mw-icon composer-chip__chevron" viewBox="0 0 24 24" width="11" height="11" aria-hidden="true"><use href="#icon-chevron-down"></use></svg>`;
+const WIKI_ATTACH_ICON = `<svg class="mw-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-attachment"></use></svg>`;
 
 /** 同步模型 chip 文案（面板可能已被 renderShell 重建，只在仍是当前 KB 时写）。 */
 function syncEmbeddedModelChip(kbId: string): void {

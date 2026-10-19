@@ -163,20 +163,11 @@ export interface PendingMessage {
 
 export type SessionStatus = 'idle' | 'running' | 'queued' | 'error';
 
-const CHAT_BOT_AVATAR_SYMBOL = './crew-ui-symbols.svg#avatar-headphones';
-
-/** 对话头像：Q 版耳机机器人。用户消息不显示头像。 */
+/** 用户消息不显示头像。 */
 function createChatAvatar(): HTMLElement {
   const avatar = document.createElement('div');
   avatar.className = 'msg__avatar bot';
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.classList.add('msg__avatar-symbol');
-  svg.setAttribute('viewBox', '0 0 32 32');
-  svg.setAttribute('aria-hidden', 'true');
-  const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-  use.setAttribute('href', CHAT_BOT_AVATAR_SYMBOL);
-  svg.appendChild(use);
-  avatar.appendChild(svg);
+  avatar.appendChild(createIcon('avatar-headphones', { className: 'msg__avatar-symbol' }));
   return avatar;
 }
 
@@ -190,19 +181,19 @@ export function formatMessageTime(ts: number): string {
 }
 
 /** 复制按钮（小图标），data-copy 存原文，已由 #chat-messages 委托统一处理点击。 */
-const COPY_BTN_SVG = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
-const IMAGE_COPY_SVG = `<svg class="chat-image-action__icon chat-image-action__icon--default" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><svg class="chat-image-action__icon chat-image-action__icon--success" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>`;
-const IMAGE_REVEAL_SVG = `<svg class="chat-image-action__icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H9l2 2h7.5A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5Z"/><path d="m10 15 4-4m-4 0h4v4"/></svg>`;
+const COPY_BTN_SVG = `<svg class="mw-icon" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><use href="#icon-copy"></use></svg>`;
+const IMAGE_COPY_SVG = `<svg class="mw-icon chat-image-action__icon chat-image-action__icon--default" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><use href="#icon-copy"></use></svg><svg class="mw-icon chat-image-action__icon chat-image-action__icon--success" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><use href="#icon-check"></use></svg>`;
+const IMAGE_REVEAL_SVG = `<svg class="mw-icon chat-image-action__icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><use href="#icon-folder"></use></svg>`;
 /** 撤回修改按钮（铅笔）。 */
-const EDIT_BTN_SVG = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>`;
+const EDIT_BTN_SVG = `<svg class="mw-icon" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><use href="#icon-edit"></use></svg>`;
 /** 待发卡片「引导」按钮（向上箭头：提升为修订式下一轮）。 */
-const QUEUE_STEER_SVG = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>`;
+const QUEUE_STEER_SVG = `<svg class="mw-icon" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><use href="#icon-arrow-up"></use></svg>`;
 /** 待发卡片「删除」按钮（垃圾桶，比 × 更直观）。 */
-const QUEUE_DELETE_SVG = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M10 11v6M14 11v6"/></svg>`;
+const QUEUE_DELETE_SVG = `<svg class="mw-icon" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><use href="#icon-trash"></use></svg>`;
 /** 待发卡片更多菜单。 */
-const QUEUE_MORE_SVG = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>`;
-const QUEUE_UP_SVG = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m18 15-6-6-6 6"/></svg>`;
-const QUEUE_DOWN_SVG = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>`;
+const QUEUE_MORE_SVG = `<svg class="mw-icon" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><use href="#icon-more"></use></svg>`;
+const QUEUE_UP_SVG = `<svg class="mw-icon" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><use href="#icon-chevron-up"></use></svg>`;
+const QUEUE_DOWN_SVG = `<svg class="mw-icon" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><use href="#icon-chevron-down"></use></svg>`;
 
 /**
  * 把一段「已受信生成」的 HTML 字符串（无用户插值，或经 renderMarkdownHtml 已对源 escapeHtml）
@@ -305,18 +296,18 @@ function buildInlineImage(
 /** 时间线图标（受信静态 SVG：思考=灯泡 / 状态=时钟 / 错误=叹号；工具按语义分类，参考 Kimi）。 */
 const PROCESS_TOOL_ICON_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><use href="#process-terminal"></use></svg>';
 const PROCESS_THINKING_ICON_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><use href="#process-thinking"></use></svg>';
-const PROCESS_STATUS_ICON_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 2"/></svg>';
-const PROCESS_ERROR_ICON_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v6"/><path d="M12 17h.01"/></svg>';
-const PROCESS_WRITE_ICON_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
-const PROCESS_READ_ICON_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>';
-const PROCESS_SEARCH_ICON_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>';
-const PROCESS_WEB_ICON_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>';
-const PROCESS_TODO_ICON_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/></svg>';
-const PROCESS_TEAM_ICON_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>';
+const PROCESS_STATUS_ICON_SVG = '<svg class="mw-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#process-clock"></use></svg>';
+const PROCESS_ERROR_ICON_SVG = '<svg class="mw-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#process-error"></use></svg>';
+const PROCESS_WRITE_ICON_SVG = '<svg class="mw-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#process-write"></use></svg>';
+const PROCESS_READ_ICON_SVG = '<svg class="mw-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#process-read"></use></svg>';
+const PROCESS_SEARCH_ICON_SVG = '<svg class="mw-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-search"></use></svg>';
+const PROCESS_WEB_ICON_SVG = '<svg class="mw-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#process-web"></use></svg>';
+const PROCESS_TODO_ICON_SVG = '<svg class="mw-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#process-todo"></use></svg>';
+const PROCESS_TEAM_ICON_SVG = '<svg class="mw-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-team"></use></svg>';
 /** 子代理委派卡图标：单人（对齐 Hermes Task 卡的人形图标，与 team 的多人图标区分）。 */
-const PROCESS_SUBAGENT_ICON_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>';
-const PROCESS_MEMORY_ICON_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></svg>';
-const PROCESS_SKILL_ICON_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l2.4 7.2H22l-6 4.8 2.3 7.2-6.3-4.5-6.3 4.5L8 14 2 9.2h7.6z"/></svg>';
+const PROCESS_SUBAGENT_ICON_SVG = '<svg class="mw-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-agent"></use></svg>';
+const PROCESS_MEMORY_ICON_SVG = '<svg class="mw-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#process-memory"></use></svg>';
+const PROCESS_SKILL_ICON_SVG = '<svg class="mw-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#process-skill"></use></svg>';
 
 /** 工具时间线图标类别。 */
 export type ToolIconKind =
@@ -1179,9 +1170,7 @@ export function renderAgentTurn(messages: ChatMessage[], options: AgentTurnOptio
     labelEl.className = 'msg__fold-label';
     labelEl.textContent = label;
     const caretSvg = createTrustedElement<SVGSVGElement>(
-      `<svg class="msg__fold-caret" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <polyline points="9 6 15 12 9 18"></polyline>
-      </svg>`,
+      `<svg class="mw-icon msg__fold-caret" viewBox="0 0 24 24" width="12" height="12" aria-hidden="true"><use href="#icon-chevron-right"></use></svg>`,
     );
     summary.appendChild(labelEl);
     summary.appendChild(caretSvg);
@@ -1455,7 +1444,7 @@ function renderTurnInspirationSurfaceCard(messages: ChatMessage[]): HTMLElement 
   card.className = 'msg__artifact-card msg__inspiration-card';
   card.setAttribute('aria-label', `${surface.title}，灵感 App`);
   const icon = createTrustedElement<HTMLElement>(
-    '<span class="msg__artifact-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.7 5.3a2 2 0 0 1-1.3 1.3L4 11.3l5 1.7a2 2 0 0 1 1.3 1.3L12 20l1.7-5.7A2 2 0 0 1 15 13l5-1.7-5-1.7a2 2 0 0 1-1.3-1.3Z"/></svg></span>',
+    '<span class="msg__artifact-icon" aria-hidden="true"><svg class="mw-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#process-skill"></use></svg></span>',
   );
   const copy = document.createElement('div'); copy.className = 'msg__artifact-copy';
   const title = document.createElement('strong'); title.textContent = surface.title;
@@ -1485,7 +1474,7 @@ function renderTurnHtmlArtifactCard(messages: ChatMessage[]): HTMLElement | null
   card.setAttribute('aria-label', `${display}，本地 HTML 网站`);
 
   const icon = createTrustedElement<HTMLElement>(
-    '<span class="msg__artifact-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/></svg></span>',
+    '<span class="msg__artifact-icon" aria-hidden="true"><svg class="mw-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#process-web"></use></svg></span>',
   );
   card.appendChild(icon);
 
@@ -1525,9 +1514,9 @@ function formatDiffCount(n: number): string {
 }
 
 /** 在资源管理器中显示：外链方框图标（与看板 Files 共用视觉语言）。 */
-const FILE_REVEAL_ICON_SVG = `<svg class="msg__file-changes__reveal-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M14 3h7v7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 14 21 3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M21 14v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><svg class="msg__file-changes__reveal-chevron" width="8" height="8" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="m3 4.5 3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+const FILE_REVEAL_ICON_SVG = `<svg class="mw-icon msg__file-changes__reveal-icon" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-external-link"></use></svg><svg class="mw-icon msg__file-changes__reveal-chevron" width="8" height="8" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-chevron-down"></use></svg>`;
 
-const FILE_CHANGES_LEAD_ICON_SVG = `<svg class="msg__file-changes__lead-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 2v6h6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 18v-6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M9 15h6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
+const FILE_CHANGES_LEAD_ICON_SVG = `<svg class="mw-icon msg__file-changes__lead-icon" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-file"></use></svg>`;
 
 /** 渲染改动卡的单个文件条目：路径 + 状态徽章 + 增删 + 悬停「在资源管理器中显示」。 */
 function renderFileChangeItem(f: TurnFileChangeSummary): HTMLLIElement {
@@ -1834,7 +1823,7 @@ export function renderPlanReviewCard(
   const empty = status === 'empty';
   const actionable = status === 'pending' || status === 'editing' || status === 'revising' || empty;
   const title = empty ? '计划为空' : firstMarkdownLine(plan) || '待审批的计划';
-  const iconHtml = '<span class="plan-review-card__icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5V4a2 2 0 0 1 2-2h11l3 3v14.5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h5"/></svg></span>';
+  const iconHtml = '<span class="plan-review-card__icon"><svg class="mw-icon" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-file"></use></svg></span>';
 
   const header = document.createElement('div');
   header.className = 'plan-review-card__header plan-review-card__header--static';

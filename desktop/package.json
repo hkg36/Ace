@@ -13,6 +13,7 @@
   "scripts": {
     "build": "node esbuild.config.mjs",
     "build:dev": "node esbuild.config.mjs --dev",
+    "icons:generate": "node scripts/generate-icon-sprite.mjs",
     "start": "npm run build && electron .",
     "dev": "npm run build:dev && electron . --dev",
     "typecheck": "tsc --noEmit",
@@ -57,6 +58,7 @@
     "ws": "^8.18.0"
   },
   "devDependencies": {
+    "@fortawesome/free-solid-svg-icons": "^7.1.0",
     "@eslint/js": "^9.39.4",
     "@playwright/test": "1.62.0",
     "@types/node": "^20.10.6",

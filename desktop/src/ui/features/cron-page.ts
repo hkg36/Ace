@@ -628,16 +628,16 @@ function renderToolbar(): string {
         .join('')}
     </div>
     <div class="cron-toolbar__search">
-      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <svg class="mw-icon" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><use href="#icon-search"></use></svg>
       <input type="search" id="cron-search" placeholder="搜索 名称 / 指令 / 会话 / id" value="${escapeHtml(view.search)}" />
     </div>
     <div class="cron-toolbar__actions">
       <button type="button" class="cron-btn" id="cron-refresh-btn" title="刷新">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
+        <svg class="mw-icon" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><use href="#icon-refresh"></use></svg>
         刷新
       </button>
       <button type="button" class="cron-btn cron-btn--primary" id="cron-create-btn">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        <svg class="mw-icon" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><use href="#icon-plus"></use></svg>
         新建定时任务
       </button>
     </div>
@@ -682,17 +682,17 @@ function renderJobRow(job: CronJob): string {
     </td>
     <td class="cron-row__actions">
       <button type="button" class="cron-icon-btn" data-view-session="${escapeHtml(job.id)}" title="查看对话结果">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        <svg class="mw-icon" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><use href="#icon-comment"></use></svg>
       </button>
       <label class="cron-switch" title="${job.enabled ? '停用' : '启用'}">
         <input type="checkbox" data-toggle="${escapeHtml(job.id)}" ${job.enabled ? 'checked' : ''} />
         <span class="cron-switch__track"></span>
       </label>
       <button type="button" class="cron-icon-btn" data-run="${escapeHtml(job.id)}" title="立即触发">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" stroke="none"><path d="M8 5v14l11-7z"/></svg>
+        <svg class="mw-icon" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><use href="#icon-play"></use></svg>
       </button>
       <button type="button" class="cron-icon-btn" data-delete="${escapeHtml(job.id)}" title="删除">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+        <svg class="mw-icon" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><use href="#icon-trash"></use></svg>
       </button>
     </td>
   </tr>`;
@@ -706,7 +706,7 @@ function renderList(): string {
   if (view.error) {
     return `<div class="cron-list__notice cron-list__notice--warn">
       <div class="cron-list__notice-icon">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+        <svg class="mw-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><use href="#icon-warning"></use></svg>
       </div>
       <div class="cron-list__notice-copy">
         <div class="cron-list__notice-title">定时任务暂不可用</div>
@@ -816,7 +816,7 @@ function renderDetailDrawer(): string {
     <div class="cron-drawer__foot">
       <button type="button" class="cron-btn cron-btn--primary" data-view-session-drawer="${escapeHtml(job.id)}">查看对话</button>
       <button type="button" class="cron-btn" data-run-drawer="${escapeHtml(job.id)}">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" stroke="none"><path d="M8 5v14l11-7z"/></svg>
+        <svg class="mw-icon" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><use href="#icon-play"></use></svg>
         立即触发
       </button>
       <button type="button" class="cron-btn" data-toggle-drawer="${escapeHtml(job.id)}">${job.enabled ? '停用' : '启用'}</button>
@@ -855,11 +855,11 @@ function renderScheduleDatetimePicker(defaults: { date: string; time: string }):
               <span class="cron-datetime-field__label">开始时间</span>
               <div class="cron-datetime-field__inputs">
                 <label class="cron-datetime-input-wrap" title="日期">
-                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                  <svg class="mw-icon" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><use href="#icon-calendar"></use></svg>
                   <input type="date" id="cron-start-date" value="${escapeHtml(defaults.date)}" aria-label="开始日期" />
                 </label>
                 <label class="cron-datetime-input-wrap" title="时间">
-                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+                  <svg class="mw-icon" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><use href="#process-clock"></use></svg>
                   <input type="time" id="cron-start-time" value="${escapeHtml(defaults.time)}" aria-label="开始时间" />
                 </label>
               </div>
@@ -1459,9 +1459,7 @@ export function renderCronTaskBoard(): void {
     <div class="task-board">
       <div class="task-board__head">
         <div class="task-board__title">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>
-          </svg>
+          <svg class="mw-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><use href="#process-clock"></use></svg>
           <span>本会话定时任务</span>
         </div>
         <button type="button" class="task-board__close" id="task-board-close" aria-label="关闭">×</button>

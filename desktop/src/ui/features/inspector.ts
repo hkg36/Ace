@@ -1051,31 +1051,19 @@ function splitFilePathDisplay(path: string): { dir: string; name: string } {
 }
 
 const FILE_REVEAL_ICON = `
-  <svg class="inspector-file__reveal-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-    <path d="M14 3h7v7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M10 14 21 3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M21 14v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-  </svg>
+  <svg class="mw-icon inspector-file__reveal-icon" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-external-link"></use></svg>
 `;
 
 const FILE_CHEV_ICON = `
-  <svg class="inspector-file__chev-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-    <path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-  </svg>
+  <svg class="mw-icon inspector-file__chev-icon" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-chevron-right"></use></svg>
 `;
 
 const FILE_EDIT_ICON = `
-  <svg viewBox="0 0 24 24" aria-hidden="true">
-    <path d="M12 20h9"/>
-    <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>
-  </svg>
+  <svg class="mw-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-edit"></use></svg>
 `;
 
 const FILE_VIEW_ICON = `
-  <svg viewBox="0 0 24 24" aria-hidden="true">
-    <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/>
-    <circle cx="12" cy="12" r="3"/>
-  </svg>
+  <svg class="mw-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-eye"></use></svg>
 `;
 
 function previewLabel(kind: FilePreviewKind): string {
@@ -1534,15 +1522,15 @@ const TAB_LABELS: Record<TabKey, string> = {
 };
 
 const TAB_ICONS: Record<TabKey, string> = {
-  context: '<svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v6c0 1.66 4.03 3 9 3s9-1.34 9-3V5M3 11v6c0 1.66 4.03 3 9 3s9-1.34 9-3v-6"/></svg>',
-  files: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>',
-  plan: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h12"/></svg>',
-  kanban: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 10h8M8 14h5"/></svg>',
-  collaboration: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="7" cy="7" r="3"/><circle cx="17" cy="7" r="3"/><circle cx="12" cy="17" r="3"/></svg>',
-  browser: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/></svg>',
+  context: '<svg class="mw-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#process-memory"></use></svg>',
+  files: '<svg class="mw-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-file"></use></svg>',
+  plan: '<svg class="mw-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-list"></use></svg>',
+  kanban: '<svg class="mw-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-task"></use></svg>',
+  collaboration: '<svg class="mw-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-team"></use></svg>',
+  browser: '<svg class="mw-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#process-web"></use></svg>',
 };
 
-const TAB_CLOSE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg>';
+const TAB_CLOSE_ICON = '<svg class="mw-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-close"></use></svg>';
 
 function renderWorkspaceTab(id: string, label: string, icon: string, active: boolean, count?: number): string {
   return `<div class="chat-inspector__tab${active ? ' is-active' : ''}" role="presentation">

@@ -14,10 +14,10 @@ function escapeHtml(text: string): string {
   return text.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] ?? c));
 }
 
-const PERMISSION_ICON = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></svg>`;
-const PERMISSION_NOTICE_ICON = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v4h1"/></svg>`;
-const STAFFING_ICON = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 20a6 6 0 0 0-12 0"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M16 11h6"/></svg>`;
-const STAFFING_CHECK_ICON = `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>`;
+const PERMISSION_ICON = `<svg class="mw-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><use href="#icon-security"></use></svg>`;
+const PERMISSION_NOTICE_ICON = `<svg class="mw-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><use href="#icon-info"></use></svg>`;
+const STAFFING_ICON = `<svg class="mw-icon" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><use href="#icon-user-plus"></use></svg>`;
+const STAFFING_CHECK_ICON = `<svg class="mw-icon" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><use href="#icon-check"></use></svg>`;
 
 interface PermissionPromptParts {
   action: string;

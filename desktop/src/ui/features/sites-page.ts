@@ -242,7 +242,7 @@ function renderAnnotationChip(): void {
   box.replaceChildren(); box.hidden = count === 0;
   if (!draft || !count) return;
   const chip = document.createElement('button'); chip.type = 'button'; chip.className = 'site-annotation-chip';
-  chip.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a3 3 0 0 1-3 3H8l-5 4V6a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3Z"/></svg>';
+  chip.innerHTML = '<svg class="mw-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-comment"></use></svg>';
   const label = document.createElement('span'); label.textContent = `${count} 条批注`; chip.appendChild(label);
   chip.addEventListener('click', () => mountSiteAnnotationWorkbench(draft.site));
   const clear = document.createElement('button'); clear.type = 'button'; clear.className = 'site-annotation-chip__clear'; clear.textContent = '×'; clear.setAttribute('aria-label', '清空页面批注');

@@ -766,16 +766,16 @@ export function __resetWikiViewForTest(): void {
 
 // ── 渲染 ──
 
-/** 工具栏/标签用线性图标（crew-ui-symbols 雪碧图，风格与全局一致）。 */
+/** 工具栏/标签复用本地 Font Awesome sprite。 */
 function uiIcon(symbolId: string): string {
-  return `<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="./crew-ui-symbols.svg#${symbolId}"></use></svg>`;
+  return `<svg class="mw-icon ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#${symbolId}"></use></svg>`;
 }
 
 function wikiIcon(name: 'folder' | 'caret', size: number): string {
   if (name === 'folder') {
-    return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 2H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2z"/></svg>`;
+    return `<svg class="mw-icon" viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true"><use href="#icon-folder"></use></svg>`;
   }
-  return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>`;
+  return `<svg class="mw-icon" viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true"><use href="#icon-chevron-right"></use></svg>`;
 }
 
 function typeBadge(type: WikiPageType, long = false): string {
@@ -1434,9 +1434,7 @@ function renderShell(): void {
                 <svg class="wiki-list__empty-arc" viewBox="0 0 120 90" fill="none">
                   <path d="M14 84 C 30 40, 66 26, 104 16" stroke="currentColor" stroke-width="1.5" stroke-dasharray="5 5" stroke-linecap="round"/>
                 </svg>
-                <svg class="wiki-list__empty-plane" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/>
-                </svg>
+                <svg class="mw-icon wiki-list__empty-plane" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-send"></use></svg>
               </div>
               <p class="wiki-list__empty-text">知识库还没有内容</p>
               <p class="wiki-list__empty-hint">点击右上角「上传」，或直接拖拽文件到左侧问答栏</p>

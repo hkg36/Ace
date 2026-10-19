@@ -102,10 +102,7 @@ function createBeforeInput(): DocumentFragment {
   sitesMode.className = 'chat-sites-mode';
   sitesMode.hidden = true;
   sitesMode.innerHTML = `<span class="chat-sites-mode__logo" data-sites-logo aria-hidden="true">
-    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-      <rect x="2.5" y="3" width="15" height="14" rx="2.25" />
-      <path d="M2.5 7h15M6 11h5M6 14h8" />
-    </svg>
+    <svg class="mw-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-inspiration"></use></svg>
   </span><strong>灵感</strong><span>设计一个 App</span>`;
   scenario.id = 'chat-scenario-chip';
   scenario.className = 'scenario-chip';

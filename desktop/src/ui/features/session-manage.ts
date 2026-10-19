@@ -32,7 +32,7 @@ let showArchived = false;
 /** 弹窗内各分组折叠状态（sectionId → collapsed）。 */
 const manageCollapsedSections = new Set<string>();
 
-const SECTION_CARET = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>`;
+const SECTION_CARET = `<svg class="mw-icon" viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><use href="#icon-chevron-right"></use></svg>`;
 
 function formatManageTime(updatedAt: number): string {
   const diff = Date.now() - updatedAt;

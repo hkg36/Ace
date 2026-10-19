@@ -102,10 +102,7 @@ function openHelpDoc(trigger: HTMLElement): void {
   const searchBox = document.createElement('label');
   searchBox.className = 'help-doc-search';
   searchBox.innerHTML = `
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="m21 21-4.35-4.35"></path>
-      <circle cx="11" cy="11" r="7"></circle>
-    </svg>
+    <svg class="mw-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-search"></use></svg>
   `;
   const search = document.createElement('input');
   search.type = 'search';

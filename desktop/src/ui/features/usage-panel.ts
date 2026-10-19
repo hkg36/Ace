@@ -101,7 +101,7 @@ function renderHero(summary: UsageSummary): string {
     <div class="usage-hero">
       <div class="usage-hero__main">
         <div class="usage-hero__icon">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 9 14 8 22 21 10 14 10 15 2 13 2"/></svg>
+          <svg class="mw-icon" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><use href="#icon-bolt"></use></svg>
         </div>
         <div class="usage-hero__copy">
           <div class="usage-hero__label">
@@ -292,19 +292,19 @@ function renderFilters(state: UsagePageState, providers: string[], models: strin
       <div class="usage-filters__spacer"></div>
       <div class="usage-filters__right">
         <div class="usage-select">
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+          <svg class="mw-icon" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><use href="#icon-refresh"></use></svg>
           <select id="usage-refresh" aria-label="刷新间隔">
             ${REFRESH_OPTIONS.map((o) => `<option value="${o.value}"${state.refreshMs === o.value ? ' selected' : ''}>${o.label}</option>`).join('')}
           </select>
         </div>
         <div class="usage-select">
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          <svg class="mw-icon" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><use href="#icon-calendar"></use></svg>
           <select id="usage-time-preset" aria-label="时间范围">
             ${TIME_PRESETS.map((t) => `<option value="${t.id}"${state.timePreset === t.id ? ' selected' : ''}>${t.label}</option>`).join('')}
           </select>
         </div>
         <button class="usage-filter-btn" id="usage-clear" type="button" title="清空本地统计">
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+          <svg class="mw-icon" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><use href="#icon-trash"></use></svg>
           清空
         </button>
       </div>
