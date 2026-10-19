@@ -1011,9 +1011,10 @@ export function renderAgentTurn(messages: ChatMessage[], options: AgentTurnOptio
     if (messages[k].role === 'assistant' && messages[k].content?.trim()) { lastTextIdx = k; break; }
   }
 
-  // 拆成两类：process（thinking / tools / status / error / 过程旁白）进折叠区；
+  // process（thinking / tools / status / 过程旁白）进折叠区；错误始终可见。
   // text 正文（仅最后一条 / 流式中的当前条）始终可见。
   const processParts: Node[] = [];
+  const errorParts: Node[] = [];
   const textParts: Node[] = [];
   const textRaw: string[] = []; // 累积可见正文纯文本，供整段复制
 
@@ -1061,7 +1062,7 @@ export function renderAgentTurn(messages: ChatMessage[], options: AgentTurnOptio
       }
       const item = renderTimelineItem(PROCESS_ERROR_ICON_SVG, 'process-timeline__icon--error', content);
       item.dataset.messageId = m.id;
-      processParts.push(item);
+      errorParts.push(item);
       return;
     }
     // assistant：thinking + tools 进折叠区（空白 thinking 同样跳过，避免只显示标题的空思考项）
@@ -1199,6 +1200,12 @@ export function renderAgentTurn(messages: ChatMessage[], options: AgentTurnOptio
   }
 
   for (const t of textParts) frag.appendChild(t);
+  if (errorParts.length > 0) {
+    const timeline = document.createElement('div');
+    timeline.className = 'process-timeline';
+    for (const error of errorParts) timeline.appendChild(error);
+    frag.appendChild(timeline);
+  }
 
   // HTML 成果直接以网站卡打开右侧 Browser workbench；这是确定性 UI 动作，
   // 不需要把 browser 工具暴露给模型。

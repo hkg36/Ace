@@ -73,6 +73,27 @@ describe('renderAgentTurn', () => {
     expect(retry?.disabled).toBe(true);
   });
 
+  it('错误和重试按钮不随已有正文的过程区折叠', () => {
+    const root = renderAgentTurn(
+      [
+        ...makeMessages(),
+        { id: 'error-visible', role: 'error', content: '网络连接失败', timestamp: 1_700_000_000_001 },
+      ],
+      {
+        isStreaming: false,
+        userPinnedOpen: false,
+        turnDurationMs: 0,
+        isErrorRetryable: () => true,
+        onRetryError: vi.fn(),
+      },
+    );
+    expect(root.querySelector('details')?.open).toBe(false);
+    const error = root.querySelector('.process-timeline__error');
+    expect(error?.textContent).toContain('网络连接失败');
+    expect(error?.closest('details')).toBeNull();
+    expect(error?.querySelector('.process-timeline__retry')).not.toBeNull();
+  });
+
   it('普通 Crew 回合与生成占位复用智能体页 Q 版耳机机器人头像', () => {
     const turn = renderAgentTurn(makeMessages({ thinking: undefined }), {
       isStreaming: false,

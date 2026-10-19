@@ -43,6 +43,7 @@ import {
   getMessages,
   jumpChatToBottom,
   renderChat,
+  restoreRetryableError,
   seedStatuses,
   setBusyWithUi,
   setHistoryLoading,
@@ -192,15 +193,16 @@ export async function loadBackendHistory(sessionId: string): Promise<void> {
       return;
     }
     const history = mergeTeamInternalMessages(items.map((item) => mapBackendHistoryItem(item, sessionId)));
-    if (st?.last_status === 'failed' && st.last_error) {
-      history.push({
+    const historyError = st?.last_status === 'failed' && st.last_error
+      ? {
         id: newMessageId('error'),
-        role: 'error',
+        role: 'error' as const,
         content: st.last_error,
         timestamp: Date.now(),
         model: state.configModel,
-      });
-    }
+      }
+      : null;
+    if (historyError) history.push(historyError);
     const merged = mergeTeamInternalMessages(mergeBackendHistory(localMsgs, history, {
       ...(st?.live ? { live: st.live } : {}),
       preserveLocalTail: hasStreamingAssistant || hasStreamingTeamTurn || hasLocalActiveTurn,
@@ -268,6 +270,10 @@ export async function loadBackendHistory(sessionId: string): Promise<void> {
     }
     if (todos.length > 0) setBookTodos(sessionId, todos);
     replaceSessionMessages(sessionId, merged);
+    if (historyError) {
+      const previousError = [...localMsgs].reverse().find((message) => message.role === 'error');
+      restoreRetryableError(sessionId, historyError.id, previousError?.id);
+    }
     // 修法3：历史替换后清掉已被替换掉的旧回合 delta 重组缓冲；保留仍在 live 流式的尾巴
     // （其 assistantId 在 merged 里）。避免旧回合缓冲残留导致泄漏 / 串轮。
     resetSessionExcept(sessionId, new Set(merged.map((m) => m.id)));

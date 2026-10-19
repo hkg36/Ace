@@ -168,6 +168,34 @@ export function isRetryableError(sessionId: string, errorMessageId: string): boo
   return !isBusy(sessionId) && retryOperationsByErrorId.get(errorMessageId)?.sessionId === sessionId;
 }
 
+export function restoreRetryableError(
+  sessionId: string,
+  errorMessageId: string,
+  previousErrorMessageId?: string,
+): void {
+  const messages = getMessages(sessionId);
+  const errorIndex = messages.findIndex((message) => message.id === errorMessageId && message.role === 'error');
+  if (errorIndex < 0) return;
+  const userMessage = messages.slice(0, errorIndex).reverse().find((message) => message.role === 'user');
+  const previous = previousErrorMessageId ? retryOperationsByErrorId.get(previousErrorMessageId) : undefined;
+  const operation = previous?.sessionId === sessionId && (!userMessage || previous.query === userMessage.content)
+    ? previous
+    : userMessage ? {
+        sessionId,
+        query: userMessage.content,
+        attachments: (userMessage.attachments ?? []).map((attachment) => ({ ...attachment })),
+        options: {},
+      } : null;
+  if (!operation) return;
+  retryOperationsByErrorId.set(errorMessageId, {
+    ...operation,
+    options: {
+      ...operation.options,
+      ...(userMessage ? { optimisticUserMessageId: userMessage.id } : {}),
+    },
+  });
+}
+
 export async function retryFailedOperation(sessionId: string, errorMessageId: string): Promise<boolean> {
   const operation = retryOperationsByErrorId.get(errorMessageId);
   if (!operation || operation.sessionId !== sessionId || isBusy(sessionId)) return false;
@@ -1530,10 +1558,11 @@ export async function dispatchWs(
     ? getMessages(sessionId).some((m) => m.id === optimisticUserMessageId)
     : false;
   if (!hasOptimisticUserMessage) {
-    appendMessage(sessionId, 'user', query, {
+    const userMessage = appendMessage(sessionId, 'user', query, {
       attachments,
       ...(optimisticUserMessageId ? { id: optimisticUserMessageId } : {}),
     });
+    retryOperation.options.optimisticUserMessageId = userMessage.id;
   }
   renderChat();
   // 用户提交新消息：强制跳到底部（重置 stickyBottom）。对齐 hermes 的 runStart → jumpToBottom。
