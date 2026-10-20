@@ -169,7 +169,12 @@ def test_add_model_uses_defaults(cfg: Config):
 
 
 def test_update_model_partial(cfg: Config):
-    cfg.update_model("alpha", {"temperature": 0.1, "base_url": "https://new.example.com", "provider": "openai"})
+    cfg.update_model("alpha", {
+        "temperature": 0.1,
+        "base_url": "https://new.example.com",
+        "provider": "openai",
+        "system_prompt": "仅用于 ask_model",
+    })
     p = cfg.model_profiles["alpha"]
     assert p.temperature == 0.1
     assert p.provider == "openai"
@@ -177,6 +182,7 @@ def test_update_model_partial(cfg: Config):
     # 未传入的字段保留
     assert p.model == "alpha-1"
     assert p.api_key_env == "ALPHA_KEY"
+    assert p.system_prompt == "仅用于 ask_model"
 
 
 def test_update_model_not_found(cfg: Config):
@@ -302,13 +308,16 @@ def test_persist_writes_api_key_plaintext_and_reloads_from_yaml(
 ):
     """已加载的密钥写入 YAML 后，即使 env 缺失也能在重启后恢复。"""
     assert cfg.model_profiles["alpha"].api_key == "sk-alpha"
+    cfg.model_profiles["alpha"].system_prompt = "仅用于 ask_model"
     cfg.persist_model_profiles()
 
     text = tmp_yaml.read_text(encoding="utf-8")
     assert "api_key: sk-alpha" in text
+    assert "system_prompt: 仅用于 ask_model" in text
     monkeypatch.delenv("ALPHA_KEY", raising=False)
     cfg2 = load_config(config_path=str(tmp_yaml))
     assert cfg2.model_profiles["alpha"].api_key == "sk-alpha"
+    assert cfg2.model_profiles["alpha"].system_prompt == "仅用于 ask_model"
 
 
 def test_yaml_api_key_wins_over_crew_home_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

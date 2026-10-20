@@ -117,6 +117,7 @@ class ModelProfile:
     provider: str = "openai"
     base_url: str = ""
     model: str = "gpt-4o-mini"
+    system_prompt: str = ""
     temperature: float = 0.7
     max_tokens: int | None = None
     context_window: int | None = None
@@ -166,6 +167,7 @@ class ModelProfile:
             "base_url": self.base_url,
             "api_key_env": self.api_key_env,
             "provider": self.provider,
+            "system_prompt": self.system_prompt,
             "has_key": self.has_key,
             "api_key_masked": self.api_key_masked,
             "temperature": self.temperature,
@@ -684,6 +686,7 @@ class Config:
             "provider": profile_data.get("provider", current.provider),
             "base_url": profile_data.get("base_url", current.base_url),
             "model": profile_data.get("model", current.model),
+            "system_prompt": profile_data.get("system_prompt", current.system_prompt),
             "temperature": profile_data.get("temperature", current.temperature),
             "max_tokens": profile_data.get("max_tokens", current.max_tokens),
             "context_window": profile_data.get("context_window", current.context_window),
@@ -1098,6 +1101,7 @@ def _build_model_profile(model_id: str, raw: dict[str, Any]) -> ModelProfile:
         provider=str(raw.get("provider") or "openai").strip().lower() or "openai",
         base_url=str(raw.get("base_url") or ""),
         model=str(raw.get("model") or "gpt-4o-mini"),
+        system_prompt=str(raw.get("system_prompt") or ""),
         temperature=_as_float(raw.get("temperature", 0.7), 0.7),
         max_tokens=_as_int_or_none(raw.get("max_tokens")),
         context_window=_as_int_or_none(raw.get("context_window")),
@@ -1123,6 +1127,7 @@ def _build_owner_model_profile(model_id: str, raw: dict[str, Any]) -> ModelProfi
         provider=str(raw.get("provider") or "openai").strip().lower() or "openai",
         base_url=str(raw.get("base_url") or ""),
         model=str(raw.get("model") or "gpt-4o-mini"),
+        system_prompt=str(raw.get("system_prompt") or ""),
         temperature=_as_float(raw.get("temperature", 0.7), 0.7),
         max_tokens=_as_int_or_none(raw.get("max_tokens")),
         context_window=_as_int_or_none(raw.get("context_window")),
@@ -1151,6 +1156,7 @@ def _build_profile_from_payload(model_id: str, payload: dict[str, Any]) -> Model
         provider=str(payload.get("provider") or "openai").strip().lower() or "openai",
         base_url=str(payload.get("base_url") or ""),
         model=str(payload.get("model") or "gpt-4o-mini"),
+        system_prompt=str(payload.get("system_prompt") or ""),
         temperature=_as_float(payload.get("temperature", 0.7), 0.7),
         max_tokens=_as_int_or_none(payload.get("max_tokens")),
         context_window=_as_int_or_none(payload.get("context_window")),
@@ -1171,6 +1177,7 @@ def _serialize_profile_for_yaml(profile: ModelProfile) -> dict[str, Any]:
         "provider": profile.provider,
         "base_url": profile.base_url,
         "model": profile.model,
+        "system_prompt": profile.system_prompt,
         "temperature": profile.temperature,
         "timeout": profile.timeout,
         "loaded": profile.loaded,

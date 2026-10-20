@@ -105,7 +105,11 @@ def register_model_tools(
 
         provider = provider_factory(profile)
         try:
-            response = await provider.chat([Message.user(prompt)], tools=None)
+            messages: list[Message] = []
+            if profile.system_prompt.strip():
+                messages.append(Message.system(profile.system_prompt))
+            messages.append(Message.user(prompt))
+            response = await provider.chat(messages, tools=None)
         finally:
             await _close_provider(provider)
         return tool_result({"model": model_id, "output": response.text})

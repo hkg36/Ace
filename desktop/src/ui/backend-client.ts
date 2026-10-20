@@ -358,6 +358,7 @@ export interface ModelOption {
   id: string;
   name: string;
   model: string;
+  system_prompt?: string;
   base_url?: string;
   api_key?: string;
   api_key_env?: string;
@@ -380,6 +381,7 @@ export interface ModelPayload {
   provider?: string;
   base_url?: string;
   model?: string;
+  system_prompt?: string;
   temperature?: number;
   max_tokens?: number | null;
   context_window?: number | null;

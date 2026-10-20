@@ -163,6 +163,11 @@
                 <label class="channel-connect-label" for="cfg-model-model">接口模型名 <span class="channel-connect-required">*</span></label>
                 <input class="channel-connect-input" id="cfg-model-model" placeholder="例如 gpt-4o-mini 或 minimax/minimax-latest" />
               </div>
+              <div class="channel-connect-field">
+                <label class="channel-connect-label" for="cfg-model-system-prompt">System 信息</label>
+                <textarea class="channel-connect-input channel-connect-textarea" id="cfg-model-system-prompt" rows="4" placeholder="仅在 ask_model 调用此模型时作为 system 消息发送"></textarea>
+                <span class="channel-connect-hint">仅用于 ask_model，不影响常规对话或其他模型调用</span>
+              </div>
               <div class="channel-connect-field" id="cfg-model-protocol-wrap">
                 <span class="channel-connect-label">API 协议</span>
                 <div class="model-protocol-choice">

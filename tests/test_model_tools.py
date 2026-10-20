@@ -61,7 +61,14 @@ async def test_list_models_returns_only_ids_and_capabilities():
 async def test_ask_model_makes_one_text_only_request():
     provider = FakeProvider(script=[ChatResponse(text="更自然的回复")])
     registry = _register(
-        {"human": ModelProfile(id="human", api_key="key", capabilities=["text"])},
+        {
+            "human": ModelProfile(
+                id="human",
+                api_key="key",
+                capabilities=["text"],
+                system_prompt="只用简洁自然的语气回答。",
+            ),
+        },
         provider,
     )
     token = current_owner_account_id.set("owner-1")
@@ -78,7 +85,27 @@ async def test_ask_model_makes_one_text_only_request():
         "output": "更自然的回复",
     }
     assert len(provider.calls) == 1
-    assert provider.calls[0][0].content == "请更拟人化地回复"
+    assert [(message.role, message.content) for message in provider.calls[0]] == [
+        ("system", "只用简洁自然的语气回答。"),
+        ("user", "请更拟人化地回复"),
+    ]
+
+
+async def test_ask_model_without_system_prompt_sends_only_user_message():
+    provider = FakeProvider(script=[ChatResponse(text="ok")])
+    registry = _register(
+        {"human": ModelProfile(id="human", api_key="key", capabilities=["text"])},
+        provider,
+    )
+
+    result = await registry.execute(
+        ToolCall("ask", "ask_model", {"model": "human", "prompt": "hello"})
+    )
+
+    assert not result.is_error
+    assert [(message.role, message.content) for message in provider.calls[0]] == [
+        ("user", "hello"),
+    ]
 
 
 @pytest.mark.parametrize(

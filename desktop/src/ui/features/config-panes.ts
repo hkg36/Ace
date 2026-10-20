@@ -264,6 +264,7 @@ function modelInitials(name: string): string {
 export function readModelForm(): ModelPayload {
   ensureModelCapabilitiesField();
   const value = (id: string): string => (document.getElementById(id) as HTMLInputElement | null)?.value.trim() ?? '';
+  const systemPrompt = (document.getElementById('cfg-model-system-prompt') as HTMLTextAreaElement | null)?.value ?? '';
   const modelId = value('cfg-model-id');
   const apiModel = value('cfg-model-model') || modelId;
   const cwRaw = (document.getElementById('cfg-model-context-window') as HTMLSelectElement | null)?.value;
@@ -271,6 +272,7 @@ export function readModelForm(): ModelPayload {
     id: modelId,
     name: modelId,
     model: apiModel,
+    system_prompt: systemPrompt,
     provider: selectedModelProtocol(),
     base_url: value('cfg-model-base-url'),
     api_key: value('cfg-model-api-key'),
@@ -283,7 +285,7 @@ export function readModelForm(): ModelPayload {
 function fillModelForm(model?: ModelOption): void {
   ensureModelCapabilitiesField();
   const set = (id: string, value: string): void => {
-    const input = document.getElementById(id) as HTMLInputElement | null;
+    const input = document.getElementById(id) as HTMLInputElement | HTMLTextAreaElement | null;
     if (input) input.value = value;
   };
   const setReadonly = (id: string, readonly: boolean): void => {
@@ -293,6 +295,7 @@ function fillModelForm(model?: ModelOption): void {
   const builtinReadonly = !!(model?.builtin && isGatewayAdmin());
   set('cfg-model-id', model?.id ?? '');
   set('cfg-model-model', model?.model ?? '');
+  set('cfg-model-system-prompt', model?.system_prompt ?? '');
   setModelProtocol(model?.provider ?? 'openai');
   set('cfg-model-base-url', model?.builtin ? '' : (model?.base_url ?? ''));
   set('cfg-model-api-key', model?.api_key ?? '');

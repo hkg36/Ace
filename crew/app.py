@@ -2049,6 +2049,7 @@ class CrewApp:
                 "provider": payload.get("provider", current.provider),
                 "base_url": payload.get("base_url", current.base_url),
                 "model": payload.get("model", current.model),
+                "system_prompt": payload.get("system_prompt", current.system_prompt),
                 "temperature": payload.get("temperature", current.temperature),
                 "max_tokens": payload.get("max_tokens", current.max_tokens),
                 "context_window": payload.get("context_window", current.context_window),

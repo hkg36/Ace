@@ -358,6 +358,14 @@
   transition: var(--mw-transition-interactive);
 }
 
+.channel-connect-textarea {
+  box-sizing: border-box;
+  height: auto;
+  min-height: 96px;
+  padding: var(--mw-space-3) var(--mw-space-4);
+  resize: vertical;
+}
+
 .channel-connect-select--light,
 .channel-connect-select:not(.channel-connect-select--light):invalid,
 .channel-connect-select option[value=""] {

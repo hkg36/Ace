@@ -16,6 +16,7 @@ beforeEach(() => {
     <form id="cfg-model-form">
       <input id="cfg-model-id" />
       <input id="cfg-model-model" />
+      <textarea id="cfg-model-system-prompt"></textarea>
       <input id="cfg-model-base-url" />
       <input id="cfg-model-api-key" />
       <select id="cfg-model-context-window">
@@ -40,6 +41,27 @@ describe('模型表单 context_window 读', () => {
 
   it('readModelForm 默认 256k', () => {
     expect(readModelForm().context_window).toBe(256000);
+  });
+});
+
+describe('模型表单 system_prompt 读写', () => {
+  it('读取并保留 system 信息中的换行和空白', () => {
+    const prompt = '  只用简洁自然的语气回答。\n请勿添加前言。  ';
+    (document.getElementById('cfg-model-system-prompt') as HTMLTextAreaElement).value = prompt;
+    expect(readModelForm().system_prompt).toBe(prompt);
+  });
+
+  it('编辑模型时填入已保存的 system 信息', () => {
+    openModelConfigModal({
+      id: 'm',
+      name: 'M',
+      model: 'm',
+      system_prompt: '只用简洁自然的语气回答。',
+      has_key: true,
+      loaded: true,
+    });
+    expect((document.getElementById('cfg-model-system-prompt') as HTMLTextAreaElement).value)
+      .toBe('只用简洁自然的语气回答。');
   });
 });
 

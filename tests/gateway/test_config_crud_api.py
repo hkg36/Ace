@@ -457,12 +457,13 @@ async def test_create_model_persists_api_key_in_owner_yaml(api, tmp_path: Path, 
 
 
 @pytest.mark.asyncio
-async def test_update_model_success(api, auth_headers):
+async def test_update_model_success(api, tmp_path: Path, auth_headers):
     transport = ASGITransport(app=api)
     async with AsyncClient(transport=transport, base_url="http://test", headers=auth_headers) as client:
         resp = await client.put("/api/config/models/alpha", json={
             "temperature": 0.1,
             "base_url": "https://new.example.com/v1",
+            "system_prompt": "仅在 ask_model 时使用",
         })
     assert resp.status_code == 200, resp.text
     data = resp.json()
@@ -470,7 +471,10 @@ async def test_update_model_success(api, auth_headers):
     assert data["profile"]["builtin"] is False
     # 拿不到 temperature（public_dict 有），验证一下
     assert data["profile"]["temperature"] == 0.1
+    assert data["profile"]["system_prompt"] == "仅在 ask_model 时使用"
     assert api.state.crew.owner_model_profiles(OWNER_A)["alpha"].base_url == "https://new.example.com/v1"
+    overlay = yaml.safe_load(_owner_overlay_path(tmp_path).read_text(encoding="utf-8")) or {}
+    assert overlay["llm"]["models"]["alpha"]["system_prompt"] == "仅在 ask_model 时使用"
 
 
 @pytest.mark.asyncio
