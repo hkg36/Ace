@@ -56,6 +56,7 @@ export const ICON_NAMES = {
   'process-thinking': 'faBrain',
   'process-write': 'faPen',
   'process-read': 'faFileLines',
+  'process-proxy': 'faNetworkWired',
   'process-web': 'faGlobe',
   'process-todo': 'faListCheck',
   'process-memory': 'faDatabase',

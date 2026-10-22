@@ -58,6 +58,7 @@ export const ICON_IDS = [
   'process-thinking',
   'process-write',
   'process-read',
+  'process-proxy',
   'process-web',
   'process-todo',
   'process-memory',
