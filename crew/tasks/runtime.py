@@ -670,6 +670,42 @@ class TaskRuntime:
             self._safe_unlink_output_ref(ref)
         return deleted
 
+    async def truncate_session_history(
+        self, session_id: str, cutoff: float, *, owner_account_id: str
+    ) -> None:
+        """Remove task-backed replay and notifications for discarded turns."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM runtime_tasks WHERE owner_account_id = ? "
+                "AND (session_id = ? OR substr(session_id, 1, ?) = ?) AND created_at >= ?",
+                (owner_account_id, session_id, len(session_id) + 2, f"{session_id}::", cutoff),
+            ).fetchall()
+        tasks = [self._row_to_dict(row) for row in rows]
+        workers = set()
+        for task in tasks:
+            tid = task["task_id"]
+            worker = self._workers.get(tid)
+            if worker is not None and not worker.done():
+                workers.add(worker)
+            await self.cancel(tid, "会话记录已删除", owner_account_id=owner_account_id)
+        if workers:
+            _, pending = await asyncio.wait(workers, timeout=5)
+            if pending:
+                raise RuntimeError("后台任务尚未停止，请稍后重试")
+        ids = [task["task_id"] for task in tasks]
+        self._writer.execute(lambda conn: conn.executemany(
+            "DELETE FROM runtime_tasks WHERE task_id = ? AND owner_account_id = ?",
+            [(tid, owner_account_id) for tid in ids],
+        ))
+        for task in tasks:
+            tid = task["task_id"]
+            ref = str(task.get("output_ref") or "")
+            if ref:
+                self._safe_unlink_output_ref(ref)
+            self._workers.pop(tid, None)
+            self._cancel_callbacks.pop(tid, None)
+            self._events.pop(tid, None)
+
     def unlink_session_output_files(self, session_id: str, owner_account_id: str = "") -> int:
         """删除某会话全部 runtime task 的 output_ref 磁盘文件（不删 DB 行）。"""
         tasks = self.list_tasks(session_id=session_id, owner_account_id=owner_account_id, limit=10000)

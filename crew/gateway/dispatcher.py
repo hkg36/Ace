@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import enum
 import json
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncIterator, Callable
 
@@ -91,6 +92,7 @@ class SessionDispatcher:
         self._owner_epochs: dict[str, int] = {}
         self._blocked_owners: set[str] = set()
         self._closed = False
+        self._history_edits: set[SessionKey] = set()
         # 已触发过 session:start 的会话（每个会话生命周期内只发一次「新会话开始」）。
         self._sessions_started: set[SessionKey] = set()
         # session:end 时回收本会话的 start 标记与 task 集合，避免：
@@ -295,6 +297,31 @@ class SessionDispatcher:
         snap = self._active_children_snapshot(session_id, owner_account_id=owner_account_id)
         return bool(snap)
 
+    @asynccontextmanager
+    async def edit_history(self, session_id: str, owner_account_id: str) -> AsyncIterator[None]:
+        """Fence new turns and wait for cancelled writers before changing history."""
+        key = self._key(session_id, owner_account_id)
+        if key in self._history_edits:
+            raise RuntimeError("正在删除会话记录，请稍后重试")
+        self._history_edits.add(key)
+        try:
+            tasks = {
+                task
+                for task_key, owned_tasks in self._tasks.items()
+                if task_key[0] == owner_account_id
+                and (task_key[1] == session_id or task_key[1].startswith(f"{session_id}::"))
+                for task in owned_tasks
+                if not task.done()
+            }
+            self.stop(session_id, "正在删除会话记录", owner_account_id=owner_account_id)
+            if tasks:
+                _, pending = await asyncio.wait(tasks, timeout=5)
+                if pending:
+                    raise RuntimeError("当前回复尚未停止，请稍后重试")
+            yield
+        finally:
+            self._history_edits.discard(key)
+
     def stop(self, session_id: str, reason: str = "已停止当前回复", owner_account_id: str = "") -> bool:
         """停止某会话当前运行/等待的请求——取消所有 task。"""
         key = self._resolve_key(session_id, owner_account_id)
@@ -496,6 +523,12 @@ class SessionDispatcher:
             return
         owner_epoch = self._owner_epochs.get(owner, 0)
         key = self._key(sid, owner)
+        if any(
+            edit_owner == owner and (sid == edit_sid or sid.startswith(f"{edit_sid}::"))
+            for edit_owner, edit_sid in self._history_edits
+        ):
+            yield ResponseChunk.error(rid, "正在删除会话记录，请稍后重试")
+            return
         lock = self._lock_for(key)
         current_task = asyncio.current_task()
         if current_task is not None:

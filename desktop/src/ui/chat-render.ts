@@ -1974,13 +1974,24 @@ export function renderWorkflowProgressPanel(message: ChatMessage): HTMLElement {
 export function renderMessageHtml(
   message: ChatMessage,
   _modelLabel: string,
-  options?: { preview?: boolean },
+  options?: { preview?: boolean; onDelete?: () => void },
 ): HTMLElement {
   const preview = options?.preview === true;
   if (message.role === 'user') {
     const msg = document.createElement('div');
     msg.className = 'msg user';
     msg.dataset.messageId = message.id;
+
+    if (!preview && options?.onDelete) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'chat-delete-btn msg-action-btn';
+      button.title = '删除本条及之后的所有会话记录';
+      button.setAttribute('aria-label', button.title);
+      button.appendChild(createIcon('icon-trash', { size: 16 }));
+      button.onclick = options.onDelete;
+      msg.appendChild(button);
+    }
 
     const body = document.createElement('div');
     body.className = 'msg__body';

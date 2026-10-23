@@ -41,6 +41,8 @@ import {
   applyChunk,
   flushPendingChunks,
   getMessages,
+  getHistoryRevision,
+  isDeletingHistory,
   jumpChatToBottom,
   renderChat,
   restoreRetryableError,
@@ -167,7 +169,9 @@ export function sessionsAffectedByDisconnect(): string[] {
 const historyLoadSeq = new Map<string, number>();
 
 export async function loadBackendHistory(sessionId: string): Promise<void> {
+  if (isDeletingHistory(sessionId)) return;
   const loadSeq = (historyLoadSeq.get(sessionId) ?? 0) + 1;
+  const historyRevision = getHistoryRevision(sessionId);
   historyLoadSeq.set(sessionId, loadSeq);
   const isLatestLoad = () => historyLoadSeq.get(sessionId) === loadSeq;
   setHistoryLoading(sessionId, true);
@@ -180,6 +184,7 @@ export async function loadBackendHistory(sessionId: string): Promise<void> {
     ]);
     // 已有更新的回填请求在跑：丢弃旧快照，写回/flush 都由最新请求收尾。
     if (!isLatestLoad()) return;
+    if (historyRevision !== getHistoryRevision(sessionId) || isDeletingHistory(sessionId)) return;
     const localMsgs = state.messages[sessionId] ?? [];
     const hasStreamingAssistant = localMsgs.some((m) => m.role === 'assistant' && m.streaming);
     const hasStreamingTeamTurn = localMsgs.some((m) => m.role === 'team_internal' && m.streaming);
@@ -328,7 +333,9 @@ export async function loadBackendHistory(sessionId: string): Promise<void> {
     });
     renderWorkspaceHistory(openSession);
   } catch {
-    if (isLatestLoad()) replaceSessionMessages(sessionId, []);
+    if (isLatestLoad() && historyRevision === getHistoryRevision(sessionId) && !isDeletingHistory(sessionId)) {
+      replaceSessionMessages(sessionId, []);
+    }
   } finally {
     // history 写回完成：flush 期间排队的迟到分片（P2-2），再清 loading 标记。
     // 仅最新请求收尾：旧请求不得清 loading（新请求仍在排队窗口内）也不得 flush。

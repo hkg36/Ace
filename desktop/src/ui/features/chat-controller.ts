@@ -13,6 +13,8 @@
  */
 
 import { getLastGatewaySequences, isDuplicateGatewayChunk, noteGatewaySequence, touchStreamActivity } from './gateway-sequence';
+import { backendApi } from '../backend-client';
+import { showConfirmDialog } from '../ui-feedback';
 import { noteDelta, resetAssistant, resetSession } from '../stream-reassembly';
 import {
   type ChatMessage,
@@ -119,6 +121,7 @@ import {
   setSessionStatus,
   shiftPendingQueue,
   state,
+  truncateMessagesFrom,
   type Bookkeeping,
 } from '../state';
 import { takeAttachmentsForSend } from './attachments';
@@ -135,6 +138,16 @@ import { productModeStore } from '../stores/product-mode-store';
 let openSessionFn: OpenSessionFn = async () => {};
 let setTabFn: (tab: TabKey) => void = () => {};
 let queueEditDraft: { sessionId: string } | null = null;
+const deletingHistorySessions = new Set<string>();
+const historyRevisions = new Map<string, number>();
+
+export function getHistoryRevision(sessionId: string): number {
+  return historyRevisions.get(sessionId) ?? 0;
+}
+
+export function isDeletingHistory(sessionId: string): boolean {
+  return deletingHistorySessions.has(sessionId);
+}
 let teamIdentityRefreshBound = false;
 const ttftVisibleLoggedRequests = new Set<string>();
 const ttftRenderLoggedRequests = new Set<string>();
@@ -641,6 +654,9 @@ export function renderChat(): void {
   }
 
   renderConversation(container, containerId, sessionId, {
+    onDeleteUserMessage: (messageId) => {
+      if (sessionId) void deleteMessageAndFollowing(sessionId, messageId);
+    },
     isErrorRetryable: (messageId) => Boolean(sessionId && isRetryableError(sessionId, messageId)),
     onRetryError: (messageId) => {
       if (sessionId) void retryFailedOperation(sessionId, messageId);
@@ -1471,6 +1487,7 @@ function applyMessageUpserts(sessionId: string, upserts: ReturnType<typeof reduc
 // ---------- queue / dispatch / send ----------
 
 export function consumePending(sessionId: string): void {
+  if (deletingHistorySessions.has(sessionId)) return;
   const [head, _rest] = shiftPendingQueue(sessionId);
   if (!head) return;
   const dispatchOptions: DispatchOptions = { subScenario: head.subScenario ?? '' };
@@ -1482,6 +1499,7 @@ export function consumePending(sessionId: string): void {
 }
 
 export function sendQueueItemNow(sessionId: string, id: string): void {
+  if (deletingHistorySessions.has(sessionId)) return;
   const queue = getPendingQueue(sessionId);
   const index = queue.findIndex((item) => item.id === id);
   if (index < 0 || isBusy(sessionId)) return;
@@ -1520,6 +1538,10 @@ export async function dispatchWs(
   subScenarioOrOptions: string | DispatchOptions = '',
   planActiveOverride?: boolean,
 ): Promise<boolean> {
+  if (deletingHistorySessions.has(sessionId)) {
+    notify('正在删除会话记录，请稍后再发送');
+    return false;
+  }
   const dispatchOptions: DispatchOptions = typeof subScenarioOrOptions === 'string'
     ? {
         subScenario: subScenarioOrOptions,
@@ -1639,6 +1661,10 @@ export async function dispatchWs(
 }
 
 export async function sendMessage(text: string): Promise<void> {
+  if (state.activeSessionId && deletingHistorySessions.has(state.activeSessionId)) {
+    notify('正在删除会话记录，请稍后再发送');
+    return;
+  }
   const plainContent = text.trim();
   const attachments = state.attachments;
   const activeHasAnnotations = state.activeSessionId
@@ -1768,6 +1794,66 @@ export function stopGeneration(sessionIdOverride?: string | Event): void {
   renderChat();
   // 用户停止后立刻拉取后端最新看板状态，避免右侧阶段仍显示“进行中”。
   void refreshKanbanBoard();
+}
+
+export async function deleteMessageAndFollowing(sessionId: string, messageId: string): Promise<void> {
+  if (deletingHistorySessions.has(sessionId)) return;
+  const messages = getMessages(sessionId);
+  const index = messages.findIndex((message) => message.id === messageId && message.role === 'user');
+  if (index < 0) {
+    notify('这条消息已不存在，请刷新会话');
+    return;
+  }
+  deletingHistorySessions.add(sessionId);
+  let deleted = false;
+  try {
+    const confirmed = await showConfirmDialog({
+      title: '删除会话记录',
+      message: '确定删除本条用户消息及之后的所有会话记录吗？此操作不可撤销。下次提交的内容将从此前保留的历史继续。',
+      confirmText: '确认删除',
+    });
+    if (!confirmed) return;
+    const current = getMessages(sessionId);
+    const currentIndex = current.findIndex((message) => message.id === messageId);
+    if (currentIndex < 0) {
+      notify('会话记录已变化，请刷新后重试');
+      return;
+    }
+    const userIndex = current.slice(0, currentIndex).filter((message) => message.role === 'user').length;
+    const userCount = current.filter((message) => message.role === 'user').length;
+    historyRevisions.set(sessionId, getHistoryRevision(sessionId) + 1);
+    const result = await backendApi.truncateHistory(sessionId, userIndex, userCount);
+    if (!result.ok) throw new Error('服务未确认删除');
+    addSuppressedSession(sessionId);
+    deleted = true;
+    resetSession(sessionId);
+    setHistoryLoading(sessionId, false);
+    flushPendingChunks(sessionId);
+    replacePendingQueue(sessionId, []);
+    setQueueHintWithUi(sessionId, '');
+    setEditFrom(sessionId, null);
+    const removed = truncateMessagesFrom(sessionId, currentIndex);
+    for (const message of removed) {
+      state.userFoldedTurns.delete(message.id);
+      state.userUnfoldedTurns.delete(message.id);
+      retryOperationsByErrorId.delete(message.id);
+    }
+    for (const [requestId, operation] of retryOperationsByRequestId) {
+      if (operation.sessionId === sessionId) retryOperationsByRequestId.delete(requestId);
+    }
+    resetBook(sessionId);
+    setBusyWithUi(sessionId, false);
+    setStatusWithUi(sessionId, 'idle');
+    if (state.activeSessionId === sessionId) resetPlanBoardDraft();
+    renderChat();
+    void refreshAllSessions();
+    notify('已删除本条及之后的所有会话记录');
+  } catch (error) {
+    notify(`删除会话记录失败：${error instanceof Error ? error.message : String(error)}`);
+  } finally {
+    deletingHistorySessions.delete(sessionId);
+    if (!deleted && !isBusy(sessionId) && getPendingQueue(sessionId).length > 0) consumePending(sessionId);
+  }
 }
 
 /** 撤回修改一条用户消息：中断当前工作流 → 删掉该消息及之后所有内容 → 文本回到输入框 →

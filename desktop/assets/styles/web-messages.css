@@ -433,6 +433,19 @@ body.welcome-active .security-banner { width: min(720px, 100%); }
   color: var(--mw-status-danger);
 }
 
+.chat-messages.web-flow .chat-delete-btn {
+  flex-shrink: 0;
+  margin-top: var(--mw-space-2);
+  color: var(--mw-status-danger);
+}
+
+.chat-messages.web-flow .chat-delete-btn:hover,
+.chat-messages.web-flow .chat-delete-btn:focus-visible {
+  background: var(--mw-status-danger-bg);
+  border-color: color-mix(in srgb, var(--mw-status-danger) 20%, transparent);
+  color: var(--mw-status-danger);
+}
+
 
 .chat-messages.web-flow .msg__foldable {
   margin: 0;

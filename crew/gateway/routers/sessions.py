@@ -10,6 +10,7 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 
 from crew.agent.external.runtime_profile import canonical_runtime_model_id, normalize_runtime_models
 from crew.agent.loop.tool_result_display import (
@@ -37,6 +38,11 @@ from crew.team.history_projection import (
 from crew.team.roles import CREW_BUILTIN_AGENT_ID, is_crew_builtin_agent
 
 log = logging.getLogger(__name__)
+
+
+class TruncateHistoryPayload(BaseModel):
+    user_index: int = Field(ge=0, strict=True)
+    expected_user_count: int = Field(ge=1, strict=True)
 
 
 def _tool_result_for_history(tool_call: ToolCall, paired_results: dict[str, str]) -> str:
@@ -565,6 +571,88 @@ def create_sessions_router(crew, dispatcher) -> APIRouter:
                     )
                 ]
         return JSONResponse(items)
+
+    @router.post("/api/session/{session_id}/history/truncate")
+    async def truncate_history(
+        request: Request, session_id: str, payload: TruncateHistoryPayload
+    ) -> JSONResponse:
+        owner = _owner(request)
+        if not _session_owned(session_id, owner):
+            return _not_found(session_id)
+        try:
+            async with dispatcher.edit_history(session_id, owner):
+                response = await session_history(request, session_id)
+                users = [
+                    item for item in json.loads(response.body)
+                    if item.get("role") == "user"
+                ]
+                if len(users) != payload.expected_user_count or payload.user_index >= len(users):
+                    return JSONResponse(
+                        {"ok": False, "error": "会话记录已变化，请刷新后重试"}, status_code=409
+                    )
+                target = users[payload.user_index]
+                messages = crew.session_store.load(session_id, owner_account_id=owner)
+                user_positions = [
+                    i for i, msg in enumerate(messages)
+                    if msg.role == "user" and not msg.is_meta and msg.content
+                ]
+                cutoff = target.get("timestamp")
+                if len(user_positions) == len(users):
+                    keep = messages[:user_positions[payload.user_index]]
+                elif isinstance(cutoff, int | float):
+                    keep = [msg for msg in messages if msg.timestamp is not None and msg.timestamp < cutoff]
+                else:
+                    return JSONResponse(
+                        {"ok": False, "error": "无法定位这条历史消息"}, status_code=409
+                    )
+                task_cutoff = float(cutoff or 0)
+                if cutoff is not None and len(user_positions) == len(users):
+                    previous_ts = users[payload.user_index - 1].get("timestamp", 0) if payload.user_index else 0
+                    candidates = [
+                        task["created_at"]
+                        for task in crew.tasks.list_tasks(
+                            session_id=session_id, owner_account_id=owner, limit=1000
+                        )
+                        if task["kind"] == "agent_turn"
+                        and float(previous_ts or 0) < task["created_at"] <= cutoff
+                        and target["content"].startswith(task.get("detail") or task["title"])
+                    ]
+                    if candidates:
+                        task_cutoff = max(candidates)
+                # Task records also supply Team history and deferred completion notifications.
+                await crew.tasks.truncate_session_history(
+                    session_id, task_cutoff, owner_account_id=owner
+                )
+                reset_sessions = [session_id]
+                for child_id, child_messages in crew.session_store.load_child_sessions(
+                    session_id, owner_account_id=owner
+                ):
+                    if not child_id.startswith(f"{session_id}::"):
+                        continue
+                    reset_sessions.append(child_id)
+                    retained = [
+                        msg for msg in child_messages
+                        if msg.timestamp is not None and cutoff is not None and msg.timestamp < cutoff
+                    ]
+                    if retained:
+                        crew.session_store.save(child_id, retained, owner_account_id=owner)
+                    else:
+                        crew.session_store.clear(child_id, owner_account_id=owner)
+                crew.session_store.save(session_id, keep, owner_account_id=owner)
+                crew.session_store.set_status(session_id, "idle", owner_account_id=owner)
+                for reset_id in reset_sessions:
+                    if crew.summary_store is not None:
+                        crew.summary_store.delete(reset_id, owner_account_id=owner)
+                    await crew.memory.delete(reset_id, owner_account_id=owner)
+                    if crew.plan_manager is not None:
+                        crew.plan_manager.reset(reset_id, owner_account_id=owner)
+                    if crew.external_agents is not None:
+                        crew.external_agents.delete_runtime_bindings_for_session(
+                            reset_id, owner_account_id=owner
+                        )
+        except RuntimeError as exc:
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=409)
+        return JSONResponse({"ok": True})
 
     @router.get("/api/session/{session_id}/plan")
     async def session_plan(request: Request, session_id: str) -> JSONResponse:

@@ -1701,6 +1701,11 @@ export const backendApi = {
     }>('/api/channel-sessions'),
   sessionsStatus: () => getJSON<Record<string, string>>('/api/sessions/status'),
   history: (id: string) => getJSON<BackendHistoryItem[]>(`/api/session/${encodeURIComponent(id)}`),
+  truncateHistory: (id: string, userIndex: number, expectedUserCount: number) =>
+    getJSON<{ ok: boolean }>(`/api/session/${encodeURIComponent(id)}/history/truncate`, {
+      method: 'POST',
+      ...jsonBody({ user_index: userIndex, expected_user_count: expectedUserCount }),
+    }),
   sessionPlan: (id: string) =>
     getJSON<SessionPlanState>(`/api/session/${encodeURIComponent(id)}/plan`),
   sessionStatus: (id: string) =>

@@ -25,6 +25,7 @@ import {
 } from './attachments';
 import {
   cancelEdit,
+  deleteMessageAndFollowing,
   editQueueItem,
   isRetryableError,
   retryFailedOperation,
@@ -197,6 +198,10 @@ export function mountConversationPanel(
     renderedContainerIds.add(target.containerId);
     renderConversation(target.container, target.containerId, opts.getSessionId(), {
       getSessionId: opts.getSessionId,
+      onDeleteUserMessage: (messageId) => {
+        const sessionId = opts.getSessionId();
+        if (sessionId) void deleteMessageAndFollowing(sessionId, messageId);
+      },
       isErrorRetryable: (messageId) => {
         const sessionId = opts.getSessionId();
         return Boolean(sessionId && isRetryableError(sessionId, messageId));

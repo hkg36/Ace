@@ -462,6 +462,7 @@ export interface ConversationRenderHooks {
   getSessionId?: () => string | null;
   isErrorRetryable?: (messageId: string) => boolean;
   onRetryError?: (messageId: string) => void;
+  onDeleteUserMessage?: (messageId: string) => void;
   /** 空态（无消息且非 busy 非编辑态时渲染）。缺省 = 主对话通用空态。 */
   emptyState?: () => HTMLElement;
   /** followup 卡提交/取消；面板必须注入自己的 resolve/cancel，缺省为 no-op。 */
@@ -593,7 +594,12 @@ export function renderConversation(
           sig = sigUserMessage(msg, state.configModel);
         }
         const captured = msg;
-        pushPlan(msg.id, sig, () => renderMessageHtml(captured, state.configModel));
+        const onDelete = msg.role === 'user' && hooks.onDeleteUserMessage
+          ? () => hooks.onDeleteUserMessage!(captured.id)
+          : undefined;
+        pushPlan(msg.id, `${sig}|delete:${Boolean(onDelete)}`, () => renderMessageHtml(
+          captured, state.configModel, onDelete ? { onDelete } : undefined,
+        ));
         i += 1;
         continue;
       }
