@@ -1197,6 +1197,7 @@ def register_builtin_tools(
     from crew.tools.memory_tools import register_memory_tools
     from crew.tools.process_registry import register_process_tool
     from crew.tools.skills_tools import register_skills_tools
+    from crew.tools.ssh_tools import register_ssh_tools
     from crew.tools.web_tools import register_web_tools
 
     register_process_tool(registry)
@@ -1217,3 +1218,4 @@ def register_builtin_tools(
         security_service=security_service,
     )
     register_interaction_tools(registry)
+    register_ssh_tools(registry)

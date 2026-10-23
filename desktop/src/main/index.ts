@@ -131,6 +131,7 @@ import {
 import { evaluateVersionUpdate } from './version-compare';
 import { resolveWorkspaceDirectoryInfo } from './workspace-directory';
 import { configurePptxWasmRuntime, PPTX_WASM_V8_FLAGS } from './wasm-runtime';
+import { SshToolError, SshTools } from './ssh-tools';
 import {
   deleteSshConnection,
   listSshConnections,
@@ -140,6 +141,7 @@ import {
 
 // 必须早于 app.whenReady()/BrowserWindow 创建；该开关随同一安装包跨 Windows、macOS、Linux 生效。
 configurePptxWasmRuntime(app.commandLine);
+const sshTools = new SshTools();
 
 const DEFAULT_GATEWAY_URL = 'http://127.0.0.1:8000';
 const GATEWAY_PORT_MIN = 8000;
@@ -630,7 +632,10 @@ async function connectBrowserHost(): Promise<void> {
         socket.close(1008, 'invalid-browser-host-request');
         return;
       }
-      void ensureBrowserHost().handleRpc(request).then((result) => {
+      const operation = typeof request.method === 'string' && request.method.startsWith('ssh_')
+        ? sshTools.handleRpc(request)
+        : ensureBrowserHost().handleRpc(request);
+      void operation.then((result) => {
         if (socket.readyState !== WebSocket.OPEN || socket !== browserHostSocket) return;
         const sent = sendBrowserHostFrame(
           socket,
@@ -661,7 +666,7 @@ async function connectBrowserHost(): Promise<void> {
           // 传 code：Python 侧需要据此区分「ref 失效」这类可恢复失败与真正的故障，
           // 靠匹配中文错误文本太脆。
           code: failure?.code ?? '',
-          uncertain: failure?.uncertain ?? false,
+          uncertain: error instanceof SshToolError ? error.uncertain : failure?.uncertain ?? false,
           phase: failure?.phase ?? '',
           partial: failure?.partial ?? false,
           completed_count: failure?.completed_count ?? 0,
@@ -674,6 +679,7 @@ async function connectBrowserHost(): Promise<void> {
       });
     });
     socket.on('close', () => {
+      if (browserHostSocket === socket) sshTools.dispose();
       if (browserHostSocket === socket) browserHostSocket = null;
       if (generation === browserHostConnectionGeneration) {
         // A gateway restart loses BrowserManager's in-memory tab epoch. Drop
@@ -706,6 +712,7 @@ async function connectBrowserHost(): Promise<void> {
 }
 
 async function resetBrowserHost(reason: string): Promise<void> {
+  sshTools.dispose();
   closeBrowserHostConnection(reason);
   const pendingDisposal = browserHostDisposePromise;
   const host = browserHost;

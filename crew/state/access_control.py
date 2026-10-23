@@ -72,12 +72,12 @@ class AccessControlConfig:
 
         enabled_toolsets = _normalize_list(section.get("enabled_toolsets"))
         disabled_toolsets = _normalize_list(section.get("disabled_toolsets"))
-        # Browser 是高权限工具集，对 external 采用 fail-closed：只有明确将
-        # "browser" 列入 enabled_toolsets 才视为授权；宽松的 "*" 不构成显式授权。
+        # 高权限桌面工具对 external 采用 fail-closed；"*" 不构成显式授权。
         if ut == "external":
-            explicit_browser_optin = enabled_toolsets is not None and "browser" in enabled_toolsets
-            if not explicit_browser_optin and "browser" not in (disabled_toolsets or []):
-                disabled_toolsets = [*(disabled_toolsets or []), "browser"]
+            for toolset in ("browser", "ssh"):
+                explicit_optin = enabled_toolsets is not None and toolset in enabled_toolsets
+                if not explicit_optin and toolset not in (disabled_toolsets or []):
+                    disabled_toolsets = [*(disabled_toolsets or []), toolset]
 
         return {
             "user_type": ut,

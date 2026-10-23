@@ -300,6 +300,28 @@ export CREW_AUTH_BASE_URL=https://auth.example.com
 拼接。Gateway 代理外部认证请求并签发本机 HttpOnly 会话 Cookie，Desktop 通过系统安全存储
 保存该会话。占位地址不会被请求；启用 remote 但未配置有效地址时，登录页会明确提示配置。
 
+### SSH 服务器工具
+
+在桌面端「设置 → SSH」保存服务器配置后，模型可通过 `ssh` 工具集操作服务器。
+桌面应用必须保持登录和连接；密码和私钥仅在桌面主进程使用，不返回给模型。
+
+| Function call | 返回值 |
+|---|---|
+| `ssh_list()` | 仅包含 `id`、`name` 的数组 |
+| `ssh_connent(id)` | 新连接的句柄字符串 `profileId`（函数名按此拼写） |
+| `ssh_exec(profileId, command)` | `{exitCode, stdout, stderr}`，非零退出码也原样返回 |
+| `ssh_read_file(profileId, path)` | `{content}`，通过 SFTP 读取 UTF-8 文件 |
+| `ssh_write_file(profileId, path, content)` | `{ok: true}`，通过 SFTP 创建或覆盖 UTF-8 文件；父目录需已存在 |
+
+连接空闲 10 分钟后自动关闭；执行中的操作不计为空闲，完成后重新计时。
+失效句柄不能自动重连，必须再次调用 `ssh_connent`，并使用新句柄。
+退出登录、切换账号、桌面通信断开或退出应用也会关闭连接。
+连接超时为 20 秒，命令和文件操作超时为 60 秒；超时将关闭连接，
+远端命令是否已产生副作用可能未知，不应盲目重试。
+单个文件和单次命令的 stdout/stderr 总大小上限为 1 MiB，超限明确报错。
+SSH 命令和写文件直接使用所配置远端账号的权限，请使用最小权限账号；
+`external` 用户必须在 `enabled_toolsets` 中显式启用 `ssh`，`*` 不代表授权。
+
 ## 🧩 技能与插件
 
 Skill 就是船员的职业技能包，装上就会，卸了就忘。仓库随附六个与产品功能直接关联的 Skill：

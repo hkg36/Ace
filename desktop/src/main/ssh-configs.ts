@@ -182,6 +182,34 @@ function resolvePassword(input: SshConnectionInput, stored: StoredSshConnection 
   return safeStorage.decryptString(Buffer.from(stored.encryptedPassword, 'base64'));
 }
 
+function connectionConfig(input: SshConnectionInput, stored?: StoredSshConnection): ConnectConfig {
+  const config: ConnectConfig = {
+    host: input.host,
+    port: input.port,
+    username: input.username,
+    readyTimeout: SSH_CONNECT_TIMEOUT_MS - 2_000,
+  };
+  if (input.authType === 'password') {
+    config.password = resolvePassword(input, stored);
+  } else {
+    const privateKeyPath = input.privateKeyPath;
+    if (!privateKeyPath) throw new Error('请填写私钥文件路径。');
+    const keyStat = fs.statSync(privateKeyPath);
+    if (!keyStat.isFile() || keyStat.size > SSH_KEY_MAX_BYTES) {
+      throw new Error('私钥文件无效或超过 1 MB。');
+    }
+    config.privateKey = fs.readFileSync(privateKeyPath);
+  }
+  return config;
+}
+
+export function savedSshConnectConfig(id: string): ConnectConfig {
+  if (!ID_PATTERN.test(id)) validationError('id');
+  const stored = readStoredConnections().find((connection) => connection.id === id);
+  if (!stored) throw new Error('SSH 配置不存在。');
+  return connectionConfig(parseInput(stored), stored);
+}
+
 function connect(config: ConnectConfig): Promise<void> {
   return new Promise((resolve, reject) => {
     const client = new Client();
@@ -213,23 +241,7 @@ export async function testSshConnection(raw: unknown): Promise<SshConnectionTest
   const input = parseInput(raw);
   try {
     const stored = readStoredConnections().find((connection) => connection.id === input.id);
-    const config: ConnectConfig = {
-      host: input.host,
-      port: input.port,
-      username: input.username,
-    };
-    if (input.authType === 'password') {
-      config.password = resolvePassword(input, stored);
-    } else {
-      const privateKeyPath = input.privateKeyPath;
-      if (!privateKeyPath) throw new Error('请填写私钥文件路径。');
-      const keyStat = fs.statSync(privateKeyPath);
-      if (!keyStat.isFile() || keyStat.size > SSH_KEY_MAX_BYTES) {
-        throw new Error('私钥文件无效或超过 1 MB。');
-      }
-      config.privateKey = fs.readFileSync(privateKeyPath);
-    }
-    await connect(config);
+    await connect(connectionConfig(input, stored));
     return { ok: true };
   } catch (error) {
     return {
