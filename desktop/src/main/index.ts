@@ -131,6 +131,12 @@ import {
 import { evaluateVersionUpdate } from './version-compare';
 import { resolveWorkspaceDirectoryInfo } from './workspace-directory';
 import { configurePptxWasmRuntime, PPTX_WASM_V8_FLAGS } from './wasm-runtime';
+import {
+  deleteSshConnection,
+  listSshConnections,
+  saveSshConnection,
+  testSshConnection,
+} from './ssh-configs';
 
 // 必须早于 app.whenReady()/BrowserWindow 创建；该开关随同一安装包跨 Windows、macOS、Linux 生效。
 configurePptxWasmRuntime(app.commandLine);
@@ -2839,6 +2845,10 @@ function registerIpc() {
     recycleGatewayForSecurityChange();
     return saved;
   });
+  trustedHandle('ssh-config:list', () => listSshConnections());
+  trustedHandle('ssh-config:save', (_e, raw: unknown) => saveSshConnection(raw));
+  trustedHandle('ssh-config:delete', (_e, raw: unknown) => deleteSshConnection(raw));
+  trustedHandle('ssh-config:test', (_e, raw: unknown) => testSshConnection(raw));
 
   trustedHandle('update:start-download', async (_e, raw: unknown) => {
     const args = parseOrThrow(UpdateStartDownloadArgs.parse(raw), 'update:start-download');

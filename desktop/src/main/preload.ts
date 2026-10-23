@@ -12,6 +12,11 @@ import type {
   TrayStatus,
 } from '../shared/types';
 import type { SecurityAuditArgs } from '../shared/ipc-schemas';
+import type {
+  SshConnectionInput,
+  SshConnectionSummary,
+  SshConnectionTestResult,
+} from '../shared/ssh-config';
 
 const api = {
   windowMinimize: () => ipcRenderer.invoke('window:minimize'),
@@ -91,6 +96,13 @@ const api = {
   getStrictSecurityEnabled: () => ipcRenderer.invoke('security:get-strict-security'),
   setStrictSecurityEnabled: (enabled: boolean) =>
     ipcRenderer.invoke('security:set-strict-security', enabled),
+  listSshConnections: () =>
+    ipcRenderer.invoke('ssh-config:list') as Promise<SshConnectionSummary[]>,
+  saveSshConnection: (config: SshConnectionInput) =>
+    ipcRenderer.invoke('ssh-config:save', config) as Promise<SshConnectionSummary>,
+  deleteSshConnection: (id: string) => ipcRenderer.invoke('ssh-config:delete', id) as Promise<void>,
+  testSshConnection: (config: SshConnectionInput) =>
+    ipcRenderer.invoke('ssh-config:test', config) as Promise<SshConnectionTestResult>,
 
   heartbeat: (version?: string) => ipcRenderer.invoke('auth:heartbeat', version),
   authGetState: () =>

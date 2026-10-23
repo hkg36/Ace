@@ -55,13 +55,15 @@
     "pinyin-pro": "^3.28.1",
     "playwright-core": "^1.62.0",
     "pptx-svg": "0.6.4",
+    "ssh2": "^1.17.0",
     "ws": "^8.18.0"
   },
   "devDependencies": {
-    "@fortawesome/free-solid-svg-icons": "^7.1.0",
     "@eslint/js": "^9.39.4",
+    "@fortawesome/free-solid-svg-icons": "^7.1.0",
     "@playwright/test": "1.62.0",
     "@types/node": "^20.10.6",
+    "@types/ssh2": "^1.15.6",
     "@types/ws": "^8.5.10",
     "@vitest/coverage-v8": "^4.1.10",
     "electron": "43.1.0",

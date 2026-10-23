@@ -4,6 +4,7 @@ const SETTINGS_NAVIGATION: ReadonlyArray<{ id: string; label: string; icon: Icon
   { id: 'general', label: '通用', icon: 'icon-settings' },
   { id: 'model', label: '模型', icon: 'process-thinking' },
   { id: 'proxy', label: '代理', icon: 'process-proxy' },
+  { id: 'ssh', label: 'SSH', icon: 'process-terminal' },
   { id: 'channel', label: '渠道', icon: 'process-web' },
   { id: 'mcp', label: 'MCP', icon: 'process-terminal' },
   { id: 'work', label: '办公助手', icon: 'icon-task' },

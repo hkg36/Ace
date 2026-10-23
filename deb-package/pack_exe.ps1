@@ -323,7 +323,7 @@ $skillPkgMarker = Join-Path $pythonCacheDir "Lib\site-packages\pandas"
 if (-not (Test-Path $skillPkgMarker)) {
     Write-Host "内嵌 Python 缺办公技能依赖，正在补装（reportlab/pandas 等）..." -ForegroundColor Yellow
     & $pythonCacheExe -m pip install --no-warn-script-location `
-        reportlab matplotlib pikepdf pdfplumber markdown2 "xhtml2pdf>=0.2.15" pypdfium2 Pillow defusedxml pandas 2>&1 | Out-Null
+        reportlab matplotlib pikepdf pdfplumber markdown2 "xhtml2pdf>=0.2.15" pypdfium2 Pillow defusedxml pandas openpyxl 2>&1 | Out-Null
     if (Test-Path $skillPkgMarker) {
         Write-Host "✓ 办公技能依赖已装入内嵌 Python" -ForegroundColor Green
     } else {
