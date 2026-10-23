@@ -26,6 +26,7 @@ export const ICON_IDS = [
   'icon-plus',
   'icon-panel-collapse',
   'icon-chat-new',
+  'icon-server',
   'icon-send',
   'icon-stop',
   'icon-refresh',

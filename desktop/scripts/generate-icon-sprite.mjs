@@ -22,6 +22,7 @@ export const ICON_NAMES = {
   'skill-badge': 'faWandMagicSparkles',
   'plugin-badge': 'faPuzzlePiece',
   'icon-plus': 'faPlus',
+  'icon-server': 'faServer',
   'icon-panel-collapse': 'faAnglesLeft',
   'icon-chat-new': 'faPenToSquare',
   'icon-send': 'faPaperPlane',
