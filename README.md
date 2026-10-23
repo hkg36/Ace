@@ -322,9 +322,13 @@ export CREW_AUTH_BASE_URL=https://auth.example.com
 SSH 命令和写文件直接使用所配置远端账号的权限，请使用最小权限账号；
 `external` 用户必须在 `enabled_toolsets` 中显式启用 `ssh`，`*` 不代表授权。
 
+内置 [ssh-remote Skill](crew/skills/ssh-remote/SKILL.md) 指导模型只使用以上 SSH 函数，
+找不到对应配置时明确提示；写入服务器文件或修改系统配置前，必须先展示具体方案、
+等待用户明确确认。该 Skill 是模型操作规范，不是工具层的强制审批机制。
+
 ## 🧩 技能与插件
 
-Skill 就是船员的职业技能包，装上就会，卸了就忘。仓库随附六个与产品功能直接关联的 Skill：
+Skill 就是船员的职业技能包，装上就会，卸了就忘。仓库随附七个与产品功能直接关联的 Skill：
 
 | Skill | 来源 | 用途 |
 |-------|------|------|
@@ -334,6 +338,7 @@ Skill 就是船员的职业技能包，装上就会，卸了就忘。仓库随�
 | `image-understanding` | `crew/skills/image-understanding/` | 通过用户配置的视觉模型理解图片，并支持 LLM Wiki 图片解析 |
 | `video-understanding` | `crew/skills/video-understanding/` | 通过用户配置的外部服务理解视频，并支持 LLM Wiki 视频解析 |
 | `browser-use` | `plugins/browser/skills/` | 应用内浏览器的导航、读取和交互工作流 |
+| `ssh-remote` | `crew/skills/ssh-remote/` | 仅通过 SSH 函数操作已配置服务器，写文件和修改系统配置前先确认 |
 
 `crew-wiki-curator` 只向 Wiki 预设 Agent 开放，普通对话不会加载 Wiki 管理流程；
 `browser-use` 随 Browser 插件启用。用户 Skill 可放入 `CREW_HOME/skills/`，并在“技能与插件”页面管理。
