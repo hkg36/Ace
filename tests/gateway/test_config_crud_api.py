@@ -326,29 +326,47 @@ async def test_session_history_returns_optional_timing_metadata(api, auth_header
 
 
 @pytest.mark.asyncio
-async def test_session_history_recovers_tool_result_for_ui(api, auth_headers):
+@pytest.mark.parametrize(
+    ("name", "arguments", "payload", "expected"),
+    [
+        (
+            "browser_use",
+            {"action": "screenshot"},
+            "/tmp/.crew/accounts/acct_0123456789abcdef/"
+            "task_workspaces/default/downloads/browser/shot.png",
+            "/tmp/.crew/accounts/acct_0123456789abcdef/"
+            "task_workspaces/default/downloads/browser/shot.png",
+        ),
+        ("file_read", {"path": "test.txt"}, "saved file contents", "saved file contents"),
+        ("terminal", {"command": "echo hi"}, '{"output": "hi\\n", "success": true}', "hi"),
+        (
+            "terminal", {"command": "blocked"},
+            '{"success": false, "error": "command blocked"}', "command blocked",
+        ),
+    ],
+    ids=["screenshot", "file-read", "terminal-output", "terminal-error"],
+)
+async def test_session_history_recovers_tool_result_for_ui(
+    api, auth_headers, name, arguments, payload, expected,
+):
     app_crew = api.state.crew
-    screenshot_path = (
-        "/tmp/.crew/accounts/acct_0123456789abcdef/"
-        "task_workspaces/default/downloads/browser/shot.png"
-    )
     assistant = Message.assistant(
         "",
-        [ToolCall("shot-1", "browser_use", {"action": "screenshot"})],
+        [ToolCall("call-1", name, arguments)],
     )
-    tool_result = Message.tool("shot-1", screenshot_path, name="browser_use")
+    tool_result = Message.tool("call-1", payload, name=name)
     app_crew.session_store.save(
-        "screenshot-history",
-        [Message.user("截图给我看"), assistant, tool_result],
+        "tool-result-history",
+        [Message.user("show tool result"), assistant, tool_result],
         owner_account_id="A:uid-a",
     )
 
     transport = ASGITransport(app=api)
     async with AsyncClient(transport=transport, base_url="http://test", headers=auth_headers) as client:
-        resp = await client.get("/api/session/screenshot-history")
+        resp = await client.get("/api/session/tool-result-history")
 
     assert resp.status_code == 200
-    assert resp.json()[1]["tool_calls"][0]["result"] == screenshot_path
+    assert resp.json()[1]["tool_calls"][0]["result"] == expected
 
 
 @pytest.mark.asyncio

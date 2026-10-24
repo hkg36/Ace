@@ -1,6 +1,12 @@
 """tool_result_detail_for_ui：终端等结构化工具结果的 UI 预览提取。"""
 
+import json
+
+import pytest
+
 from crew.agent.loop.tool_result_display import tool_result_detail_for_ui
+from crew.core.types import Message, ToolCall
+from crew.gateway.routers.sessions import _session_messages_to_history_items
 
 
 def test_terminal_detail_prefers_output_over_json_metadata():
@@ -78,9 +84,54 @@ def test_subagent_result_paired_in_history_replay():
   )
   tc = ToolCall(id="tc-1", name="delegate_task", arguments={"tasks": [{"goal": "g"}]})
   assert _tool_result_for_history(tc, {"tc-1": payload}) == payload
-  # 非 subagent 工具不配对（保持历史载荷精简的既有语义）
+  # 普通工具同样恢复结果，但保留实时展示的预览长度限制。
   other = ToolCall(id="tc-2", name="file_read", arguments={})
-  assert _tool_result_for_history(other, {"tc-2": "x" * 5000}) == ""
+  assert _tool_result_for_history(other, {"tc-2": "x" * 5000}) == "x" * 1200
+
+
+@pytest.mark.parametrize(
+    ("name", "payload", "expected"),
+    [
+        ("file_read", "file contents", "file contents"),
+        ("file_read", "x" * 5000, "x" * 1200),
+        ("web_search", '{"content": "search results", "meta": 1}', "search results"),
+        ("terminal", '{"success": true, "output": "line1\\nline2"}', "line1\nline2"),
+        ("terminal", json.dumps({"output": "a" * 2000 + "tail"}), "a" * 1196 + "tail"),
+        ("terminal", '{"success": false, "error": "command blocked"}', "command blocked"),
+        ("terminal", '{"success": false, "exit_code": 2}', "terminal exited with code 2"),
+        ("file_read", "", ""),
+    ],
+    ids=["plain", "clipped", "structured", "stdout", "stdout-tail", "error", "exit-code", "empty"],
+)
+def test_history_restores_paired_tool_result_preview(name, payload, expected):
+    call = ToolCall(id="call-1", name=name, arguments={}, status="done")
+    items = _session_messages_to_history_items([
+        Message(role="assistant", content="", tool_calls=[call]),
+        Message(role="tool", content=payload, tool_call_id=call.id),
+        Message(role="assistant", content="finished"),
+    ])
+
+    assert [item["role"] for item in items] == ["assistant", "assistant"]
+    assert items[0]["tool_calls"][0]["result"] == expected
+    assert items[0]["tool_calls"][0]["status"] == "done"
+
+
+def test_history_pairs_results_by_call_id_and_preserves_persisted_results():
+    calls = [
+        ToolCall(id="call-1", name="file_read", arguments={}),
+        ToolCall(id="call-2", name="file_read", arguments={}, result="saved preview"),
+        ToolCall(id="call-3", name="file_read", arguments={}),
+    ]
+    items = _session_messages_to_history_items([
+        Message(role="assistant", content="", tool_calls=calls),
+        Message(role="tool", content="second result", tool_call_id="call-2"),
+        Message(role="tool", content="first result", tool_call_id="call-1"),
+        Message(role="tool", content="unrelated result", tool_call_id="other"),
+    ])
+
+    assert [call["result"] for call in items[0]["tool_calls"]] == [
+        "first result", "saved preview", "",
+    ]
 
 
 def test_inspiration_surface_survives_live_detail_and_history_replay():

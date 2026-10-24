@@ -13,10 +13,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from crew.agent.external.runtime_profile import canonical_runtime_model_id, normalize_runtime_models
-from crew.agent.loop.tool_result_display import (
-    SUBAGENT_FULL_RESULT_TOOLS,
-    tool_result_detail_for_ui,
-)
+from crew.agent.loop.tool_result_display import tool_result_detail_for_ui
 from crew.browser.driver import BrowserDriverError
 from crew.core.types import Message, ToolCall, tool_arguments_for_ui
 from crew.gateway.auth import account_from_request
@@ -46,37 +43,17 @@ class TruncateHistoryPayload(BaseModel):
 
 
 def _tool_result_for_history(tool_call: ToolCall, paired_results: dict[str, str]) -> str:
-    """Recover only durable UI artifacts missing from older built-in calls.
+    """Recover missing built-in results using the same preview as live events.
 
-    Other built-in tool results intentionally stay out of history payloads;
-    replaying all of them would inflate the response and expose detail that the
-    previous history UI never rendered.
+    Stored ToolCall results remain authoritative. Separate tool messages use
+    the shared display helper to bound ordinary previews while preserving
+    structured artifacts such as subagent cards.
     """
     if tool_call.result:
         return tool_call.result
-    if (
-        tool_call.name == "browser_use"
-        and tool_call.arguments.get("action") == "screenshot"
-    ):
-        return tool_result_detail_for_ui(
-            tool_call.name, paired_results.get(tool_call.id, "")
-        )
-    # subagent 委派卡（delegate_task/run_agent）：历史回放同样需要完整
-    # {"results":[...]} JSON 渲染任务描述/最终回复/执行摘要，否则重开会话后
-    # 卡片只剩任务描述。走 tool_result_detail_for_ui 与 live 路径同一出口。
-    if tool_call.name in SUBAGENT_FULL_RESULT_TOOLS:
-        return tool_result_detail_for_ui(
-            tool_call.name, paired_results.get(tool_call.id, "")
-        )
-    if tool_call.name in {"Widget", "Canvas"} and tool_call.arguments.get("action") == "show":
-        return tool_result_detail_for_ui(
-            tool_call.name, paired_results.get(tool_call.id, "")
-        )
-    if tool_call.name == "publish_site":
-        return tool_result_detail_for_ui(
-            tool_call.name, paired_results.get(tool_call.id, "")
-        )
-    return ""
+    return tool_result_detail_for_ui(
+        tool_call.name, paired_results.get(tool_call.id, "")
+    )
 
 
 def _session_messages_to_history_items(
@@ -89,7 +66,7 @@ def _session_messages_to_history_items(
     # Built-in executor stores canonical tool results as separate `tool`
     # messages. Older assistant ToolCall rows therefore have an empty result,
     # even though the live tool_event carried one. Pair them at read time so
-    # history can reconstruct UI artifacts such as exported browser images.
+    # history can restore tool previews as well as structured UI artifacts.
     tool_results = {
         message.tool_call_id: message.content
         for message in msgs
