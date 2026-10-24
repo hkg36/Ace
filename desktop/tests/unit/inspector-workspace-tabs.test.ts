@@ -7,6 +7,8 @@ import {
   bindInspectorUi,
   enableInspectorSurfaceAutoWidth,
   openInspectorToTab,
+  refreshInspector,
+  refreshInspectorChrome,
 } from '../../src/ui/features/inspector';
 import { __resetAllStoresForTest, messageStore, sessionStore } from '../../src/ui/stores/stores';
 import { setActiveSessionId } from '../../src/ui/state';
@@ -184,5 +186,60 @@ describe('Inspector browser-style workspace tabs', () => {
     handle.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
     expect(document.body.classList.contains('inspector-surface-auto-width')).toBe(false);
     expect(handle.getAttribute('aria-valuenow')).toBeTruthy();
+  });
+
+  it('opens SSH from the add menu, follows live results and isolates session histories', () => {
+    bindInspectorUi();
+    openInspectorToTab('context');
+    document.getElementById('inspector-new-browser-tab')?.click();
+    const entry = document.querySelector<HTMLButtonElement>('[data-workspace-entry="ssh"]');
+    expect(entry?.textContent).toBe('SSH');
+    entry?.click();
+    const body = document.getElementById('chat-inspector-body') as HTMLElement;
+    expect(body.textContent).toContain('暂无 SSH 命令记录');
+    Object.defineProperty(body, 'scrollHeight', { value: 900, configurable: true });
+
+    const call = {
+      toolCallId: 'ssh-live',
+      name: 'ssh_exec',
+      args: JSON.stringify({ command: 'hostname', profileId: 'server-1' }),
+      status: 'running' as const,
+      startedAt: 1000,
+    };
+    const messages = [{
+      id: 'ssh-message', role: 'assistant' as const, content: '', timestamp: 1000, toolCalls: [call],
+    }];
+    messageStore.set({ messages: { 'sess-workspace': messages } });
+    refreshInspectorChrome();
+    expect(body.textContent).toContain('hostname');
+    expect(body.textContent).toContain('执行中');
+    expect(body.scrollTop).toBe(900);
+
+    messageStore.set({
+      messages: {
+        'sess-workspace': [{
+          ...messages[0],
+          toolCalls: [{ ...call, status: 'done', result: '{"exitCode":0,"stdout":"my-server\\n","stderr":""}' }],
+        }],
+      },
+    });
+    body.scrollTop = 0;
+    refreshInspectorChrome();
+    expect(body.textContent).toContain('my-server');
+    expect(body.textContent).toContain('已完成');
+    expect(body.scrollTop).toBe(900);
+
+    openInspectorToTab('files');
+    body.scrollTop = 0;
+    openInspectorToTab('ssh');
+    expect(body.textContent).toContain('my-server');
+    expect(body.scrollTop).toBe(900);
+
+    setActiveSessionId('other-session');
+    messageStore.set({ messages: { 'other-session': [{ id: 'other', role: 'user', content: 'hello', timestamp: 2000 }] } });
+    refreshInspector();
+    openInspectorToTab('ssh');
+    expect(body.textContent).toContain('暂无 SSH 命令记录');
+    expect(body.textContent).not.toContain('my-server');
   });
 });

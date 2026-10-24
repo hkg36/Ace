@@ -1,7 +1,7 @@
 /**
  * 聊天右侧 Inspector 面板（codex / opencode 风格）
  *
- * Tab：Context / Files / Plan / Kanban / 协作（仅 Team Session）/ Browser
+ * Tab：Context / Files / Plan / Kanban / 协作（仅 Team Session）/ SSH / Browser
  *
  * 关键：
  *   - Context Tab 末尾加"原始消息"列表（user/assistant 完整 JSON + messageID + 时间）
@@ -72,6 +72,7 @@ import {
 } from '../layouts/inspector-shell';
 import { showFileOpenMenu } from './file-open-menu';
 import { InspectorSessionUiStore } from './inspector-context-files';
+import { renderSshHistory } from './inspector-ssh';
 import {
   createPlanBoardUiState,
   isPlanActionable,
@@ -1497,6 +1498,7 @@ function renderBody(): void {
   else if (activeTab === 'plan') html = renderPlan();
   else if (activeTab === 'kanban') html = renderKanban();
   else if (activeTab === 'collaboration') html = renderCollaboration();
+  else if (activeTab === 'ssh') html = renderSshHistory(getActiveMessages());
   else if (activeTab === 'browser') html = renderBrowserPanel();
   body.classList.toggle('is-team-collaboration', activeTab === 'collaboration');
   body.innerHTML = html;
@@ -1510,6 +1512,7 @@ function renderBody(): void {
   if (activeTab === 'files') mountFilePreviews(body);
   if (activeTab === 'browser') bindBrowserPanel();
   restoreInspectorScroll(body, savedBodyTop, savedNested);
+  if (activeTab === 'ssh') body.scrollTop = body.scrollHeight;
 }
 
 const TAB_LABELS: Record<TabKey, string> = {
@@ -1518,6 +1521,7 @@ const TAB_LABELS: Record<TabKey, string> = {
   plan: '计划',
   kanban: '任务',
   collaboration: '协作',
+  ssh: 'SSH',
   browser: '浏览器',
 };
 
@@ -1527,6 +1531,7 @@ const TAB_ICONS: Record<TabKey, string> = {
   plan: '<svg class="mw-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-list"></use></svg>',
   kanban: '<svg class="mw-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-task"></use></svg>',
   collaboration: '<svg class="mw-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-team"></use></svg>',
+  ssh: '<svg class="mw-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#process-terminal"></use></svg>',
   browser: '<svg class="mw-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#process-web"></use></svg>',
 };
 
@@ -1594,6 +1599,7 @@ function renderInspectorTabMenu(): void {
     { id: 'files', label: TAB_LABELS.files, icon: TAB_ICONS.files },
     { id: 'plan', label: TAB_LABELS.plan, icon: TAB_ICONS.plan },
     { id: 'kanban', label: TAB_LABELS.kanban, icon: TAB_ICONS.kanban },
+    { id: 'ssh', label: TAB_LABELS.ssh, icon: TAB_ICONS.ssh },
     ...(teamSession ? [{ id: 'collaboration', label: TAB_LABELS.collaboration, icon: TAB_ICONS.collaboration }] : []),
     { id: 'browser:new', label: TAB_LABELS.browser, icon: TAB_ICONS.browser },
   ];
@@ -2068,7 +2074,7 @@ export function syncInspectorToggleState(): void {
   toggle.setAttribute('aria-disabled', String(!canOpen));
   toggle.setAttribute('aria-expanded', String(inspectorOpen && canOpen));
   toggle.title = canOpen
-    ? `看板（上下文 / 文件 / 计划 / 任务${isExternalTeamSession(sid) ? ' / 协作' : ''}）`
+    ? `看板（上下文 / 文件 / 计划 / 任务 / SSH${isExternalTeamSession(sid) ? ' / 协作' : ''}）`
     : '当前没有对话信息，先发起一次对话再打开看板';
   toggle.setAttribute('aria-label', toggle.title);
 
@@ -2647,7 +2653,8 @@ export function refreshInspector(): void {
 /**
  * 仅刷新 tab 角标 / 开关态，不重建 body。
  * 供流式 renderChat 使用：避免每个 delta 把计划 MD / 文件 diff 的滚动位置冲掉。
- * 正文仍由 todo_updated / file_changes / plan_review / setUsageSnapshot 等路径全量 refresh。
+ * 正文仍由 todo_updated / file_changes / plan_review / setUsageSnapshot 等路径全量 refresh；
+ * SSH 页面例外，跟随工具调用实时刷新命令和结果。
  */
 export function refreshInspectorChrome(): void {
   if (customViewOpen) {
@@ -2656,4 +2663,5 @@ export function refreshInspectorChrome(): void {
   }
   renderTabs();
   syncInspectorToggleState();
+  if (inspectorOpen && activeTab === 'ssh') renderBody();
 }

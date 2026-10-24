@@ -245,6 +245,70 @@
   background: var(--mw-bg-surface);
 }
 
+.mw-inspector .inspector-ssh {
+  display: grid;
+  gap: var(--mw-space-3);
+}
+
+.mw-inspector .inspector-ssh__entry {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--mw-border-subtle);
+  border-radius: var(--mw-radius-2);
+}
+
+.mw-inspector .inspector-ssh__head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--mw-space-2);
+  padding: var(--mw-space-2) var(--mw-space-3);
+  background: var(--mw-bg-subtle);
+  color: var(--mw-text-secondary);
+  font-size: var(--mw-type-caption-size);
+  overflow-wrap: anywhere;
+}
+
+.mw-inspector .inspector-ssh__command,
+.mw-inspector .inspector-ssh__output {
+  margin: 0;
+  font: var(--mw-type-code-weight) var(--mw-type-code-size) / var(--mw-type-code-line) var(--mw-font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.mw-inspector .inspector-ssh__command {
+  padding: var(--mw-space-3);
+  border-bottom: 1px solid var(--mw-border-subtle);
+  background: var(--mw-code-bg);
+  color: var(--mw-code-text);
+}
+
+.mw-inspector .inspector-ssh__result {
+  display: grid;
+  gap: var(--mw-space-3);
+  padding: var(--mw-space-3);
+}
+
+.mw-inspector .inspector-ssh__field {
+  display: grid;
+  min-width: 0;
+  gap: var(--mw-space-1);
+}
+
+.mw-inspector .inspector-ssh__output {
+  padding: var(--mw-space-3);
+  border: 1px solid var(--mw-border-subtle);
+  border-radius: var(--mw-radius-2);
+  background: var(--mw-code-bg);
+  color: var(--mw-code-text);
+}
+
+.mw-inspector .inspector-ssh__hint {
+  margin: 0;
+  color: var(--mw-text-muted);
+  font-size: var(--mw-type-caption-size);
+}
+
 /* Keep the legacy Kanban composition; only its values come from the MW tokens. */
 .mw-inspector .inspector-kanban {
   display: flex;

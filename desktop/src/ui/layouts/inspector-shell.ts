@@ -6,6 +6,7 @@ export type InspectorTabKey =
   | 'plan'
   | 'kanban'
   | 'collaboration'
+  | 'ssh'
   | 'browser';
 
 /** Builds the Inspector chrome; the feature owns the dynamic workspace tabs. */
