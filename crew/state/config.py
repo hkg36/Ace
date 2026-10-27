@@ -404,11 +404,19 @@ class Config:
     def owner_model_profiles(self, owner_account_id: str | None = None) -> dict[str, ModelProfile]:
         """返回 owner 可见的模型视图：全局共享模型 + owner 私有模型。
 
+        本机 local owner 直接使用全局模型配置，不读取默认工作区 overlay。
         基础 ``config.yaml`` 中加载的模型是共享模型；只有 ``default`` 是内置模型。
         Owner overlay 中的模型覆盖同 ID 的共享模型。
 
         模型密钥只读取模型配置中的 ``api_key`` 字段。
         """
+        owner = str(owner_account_id or "").strip()
+        if owner == "local":
+            return {
+                model_id: replace(profile)
+                for model_id, profile in self.model_profiles.items()
+            }
+
         profiles: dict[str, ModelProfile] = {}
         for model_id, profile in self.model_profiles.items():
             if not profile.shared:
@@ -465,7 +473,8 @@ class Config:
                 return ready_model_id
             return model_id
 
-        overlay = self.owner_overlay_data(owner_account_id)
+        owner = str(owner_account_id or "").strip()
+        overlay = {} if owner == "local" else self.owner_overlay_data(owner_account_id)
         llm = overlay.get("llm") if isinstance(overlay.get("llm"), dict) else {}
         candidate = str((llm or {}).get("default") or (llm or {}).get("active") or "").strip()
         resolved = _resolved_candidate(candidate)
@@ -536,11 +545,22 @@ class Config:
         *,
         active_model_id: str | None = None,
     ) -> Path:
-        """把 owner 私有模型视图写回 owner overlay。"""
+        """把 owner 模型视图写回全局配置或 owner overlay。"""
         owner = str(owner_account_id or "").strip()
         if not owner:
             raise ValueError("owner_account_id 不能为空")
         with _CONFIG_WRITE_LOCK:
+            if owner == "local":
+                self.model_profiles = {
+                    model_id: replace(profile, shared=True)
+                    for model_id, profile in model_profiles.items()
+                }
+                active = str(active_model_id or self.active_model_id).strip()
+                if active:
+                    self.active_model_id = active
+                    self.default_model_id = active
+                return self._persist_model_profiles_locked()
+
             yaml_path = owner_overlay_config_path(owner)
             data = _read_yaml_file(yaml_path)
             llm = data.get("llm")

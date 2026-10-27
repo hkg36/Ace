@@ -125,6 +125,38 @@ async def test_create_model_success(api, tmp_path: Path, auth_headers):
 
 
 @pytest.mark.asyncio
+async def test_local_model_crud_persists_to_global_config(api, tmp_path: Path):
+    transport = ASGITransport(app=api)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        created = await client.post(
+            "/api/config/models",
+            json={"id": "local-model", "model": "local-model-1", "api_key": "local-key"},
+        )
+        config_path = Path(api.state.crew.config.config_path)
+        created_config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        assert created_config["llm"]["models"]["local-model"]["api_key"] == "local-key"
+        assert not (tmp_path / ".crew" / "default_workspace" / "config.yaml").exists()
+        updated = await client.put(
+            "/api/config/models/alpha",
+            json={"base_url": "https://updated.example.com/v1"},
+        )
+        switched = await client.post("/api/config/model", json={"model_id": "local-model"})
+        deleted = await client.delete("/api/config/models/local-model")
+
+    assert created.status_code == 201, created.text
+    assert updated.status_code == 200, updated.text
+    assert switched.status_code == 200, switched.text
+    assert deleted.status_code == 200, deleted.text
+
+    data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert "local-model" not in data["llm"]["models"]
+    assert data["llm"]["models"]["alpha"]["base_url"] == "https://updated.example.com/v1"
+    assert data["llm"]["active"] == "alpha"
+    assert data["llm"]["default"] == "alpha"
+    assert not (tmp_path / ".crew" / "default_workspace" / "config.yaml").exists()
+
+
+@pytest.mark.asyncio
 async def test_browser_proxy_settings_are_persisted_without_exposing_password(api, tmp_path: Path, auth_headers):
     api.state.crew.config.gateway_admin_accounts = []
     transport = ASGITransport(app=api)
