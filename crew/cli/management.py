@@ -19,7 +19,6 @@ _MODEL_FIELDS = (
     "provider",
     "base_url",
     "model",
-    "api_key_env",
     "api_key",
     "temperature",
     "max_tokens",
@@ -98,7 +97,6 @@ def _add_model_args(parser, *, require_id: bool) -> None:
     parser.add_argument("--provider")
     parser.add_argument("--base-url")
     parser.add_argument("--model")
-    parser.add_argument("--api-key-env")
     parser.add_argument("--api-key")
     parser.add_argument("--temperature", type=float)
     parser.add_argument("--max-tokens", type=int)

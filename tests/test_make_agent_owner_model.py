@@ -28,7 +28,6 @@ def _write_placeholder_config(tmp_path: Path, crew_home: Path) -> Path:
                     "models": {
                         "default": {
                             "name": "Default",
-                            "api_key_env": "CREW_MODEL_API_KEY",
                             "base_url": "https://api.example.com/v1",
                             "model": "your-model-name",
                         }
@@ -68,7 +67,6 @@ def owner_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                         "alpha": {
                             "name": "Alpha",
                             "api_key": "sk-alpha-global",
-                            "api_key_env": "ALPHA_API_KEY",
                             "provider": "openai",
                             "base_url": "https://alpha.example.com/v1",
                             "model": "alpha-1",
@@ -102,7 +100,6 @@ def owner_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                         "MiniMax-M3": {
                             "name": "MiniMax-M3",
                             "api_key": "sk-minimax-owner",
-                            "api_key_env": "CREW_API_KEY",
                             "provider": "anthropic",
                             "base_url": "https://api.minimaxi.com/anthropic",
                             "model": "MiniMax-M3",
@@ -184,7 +181,6 @@ def test_existing_owner_profile_replaces_placeholder_default_at_runtime(
                         "deepseek": {
                             "name": "DeepSeek",
                             "api_key": "sk-owner",
-                            "api_key_env": "CREW_API_KEY",
                             "base_url": "https://api.deepseek.com",
                             "model": "deepseek-chat",
                             "loaded": True,
@@ -216,7 +212,6 @@ def test_first_ready_owner_model_replaces_and_persists_placeholder_default(
         {
             "id": "deepseek",
             "name": "DeepSeek",
-            "api_key_env": "CREW_API_KEY",
             "base_url": "https://api.deepseek.com",
             "model": "deepseek-chat",
             "api_key": "sk-owner",
@@ -247,7 +242,6 @@ async def test_make_agent_without_api_key_borrows_fake_provider(tmp_path, monkey
         id="default",
         name="Default",
         api_key="",
-        api_key_env="CREW_MODEL_API_KEY",
         base_url="https://api.example.com/v1",
         model="your-model-name",
         builtin=True,

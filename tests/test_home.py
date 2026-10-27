@@ -665,7 +665,6 @@ def test_load_config_ignores_model_key_from_configured_crew_home_env(tmp_path, m
         "llm:\n"
         "  models:\n"
         "    test:\n"
-        "      api_key_env: CREW_TEST_HOME_ENV_KEY\n"
         "      model: fake-model\n"
         "  active: test\n",
         encoding="utf-8",
@@ -697,7 +696,6 @@ def test_load_config_ignores_model_key_from_system_config_env(tmp_path, monkeypa
         "llm:\n"
         "  models:\n"
         "    test:\n"
-        "      api_key_env: CREW_LAYER_TEST_KEY\n"
         "      model: fake-model\n"
         "  active: test\n",
         encoding="utf-8",
@@ -804,7 +802,6 @@ def test_load_config_ignores_user_crew_model_key_env(tmp_path, monkeypatch):
         "llm:\n"
         "  models:\n"
         "    test:\n"
-        "      api_key_env: CREW_LAYER_TEST_KEY\n"
         "      model: fake-model\n"
         "  active: test\n",
         encoding="utf-8",

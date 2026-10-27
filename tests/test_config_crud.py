@@ -43,7 +43,6 @@ def tmp_yaml(tmp_path: Path) -> Path:
                 "alpha": {
                     "name": "Alpha",
                     "api_key": "sk-alpha",
-                    "api_key_env": "ALPHA_KEY",
                     "provider": "anthropic",
                     "base_url": "https://alpha.example.com/v1",
                     "model": "alpha-1",
@@ -55,7 +54,6 @@ def tmp_yaml(tmp_path: Path) -> Path:
                 "beta": {
                     "name": "Beta",
                     "api_key": "sk-beta",
-                    "api_key_env": "BETA_KEY",
                     "base_url": "https://beta.example.com/v1",
                     "model": "beta-1",
                 },
@@ -82,7 +80,6 @@ def test_add_model_basic(cfg: Config):
     profile = cfg.add_model({
         "id": "gamma",
         "name": "Gamma",
-        "api_key_env": "GAMMA_KEY",
         "base_url": "https://gamma.example.com/v1",
         "model": "gamma-1",
     })
@@ -160,7 +157,6 @@ def test_add_model_rejects_duplicate(cfg: Config):
 def test_add_model_uses_defaults(cfg: Config):
     profile = cfg.add_model({"id": "minimal"})
     # 缺省字段应有合理默认值
-    assert profile.api_key_env == "CREW_API_KEY"
     assert profile.model == "gpt-4o-mini"
     assert profile.temperature == 0.7
 
@@ -181,7 +177,6 @@ def test_update_model_partial(cfg: Config):
     assert p.base_url == "https://new.example.com"
     # 未传入的字段保留
     assert p.model == "alpha-1"
-    assert p.api_key_env == "ALPHA_KEY"
     assert p.system_prompt == "仅用于 ask_model"
 
 
@@ -224,7 +219,7 @@ def test_remove_last_model_forbidden(cfg: Config):
 
 
 def test_persist_writes_back_full_models(cfg: Config, tmp_yaml: Path):
-    cfg.add_model({"id": "gamma", "api_key_env": "GAMMA_KEY", "model": "g-1"})
+    cfg.add_model({"id": "gamma", "model": "g-1"})
     cfg.update_model("alpha", {"temperature": 0.99})
     cfg.remove_model("beta")
     cfg.persist_model_profiles()
@@ -241,7 +236,7 @@ def test_persist_writes_back_full_models(cfg: Config, tmp_yaml: Path):
 
 def test_persist_preserves_other_sections(cfg: Config, tmp_yaml: Path):
     """写回 llm.models 时，runtime 段应原样保留。"""
-    cfg.add_model({"id": "gamma", "api_key_env": "GAMMA_KEY"})
+    cfg.add_model({"id": "gamma"})
     cfg.persist_model_profiles()
 
     data = yaml.safe_load(tmp_yaml.read_text(encoding="utf-8"))
@@ -254,7 +249,6 @@ def test_load_config_invalid_active_uses_sorted_profile_id(tmp_yaml: Path):
     data["llm"]["active"] = "missing"
     data["llm"]["models"]["zeta"] = {
         "name": "Zeta",
-        "api_key_env": "ZETA_KEY",
         "base_url": "https://zeta.example.com/v1",
         "model": "zeta-1",
     }
@@ -332,7 +326,6 @@ def test_yaml_api_key_wins_over_crew_home_env(tmp_path: Path, monkeypatch: pytes
                     "models": {
                         "alpha": {
                             "api_key": "yaml-key",
-                            "api_key_env": "ALPHA_KEY",
                             "model": "alpha-model",
                         },
                     },
@@ -354,7 +347,7 @@ def test_yaml_api_key_wins_over_crew_home_env(tmp_path: Path, monkeypatch: pytes
 def test_model_api_key_is_not_loaded_from_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
-        "llm:\n  models:\n    alpha:\n      api_key_env: ALPHA_KEY\n      model: alpha-model\n",
+        "llm:\n  models:\n    alpha:\n      model: alpha-model\n",
         encoding="utf-8",
     )
     monkeypatch.setenv("ALPHA_KEY", "legacy-environment-key")
@@ -426,7 +419,6 @@ def test_serialize_profile_skips_none_optional():
     assert "context_window" not in data
     # 必填字段仍写入
     assert data["model"] == "gpt-4o-mini"
-    assert "api_key_env" in data
 
 
 # ----------------------- write_env_key -----------------------
@@ -510,7 +502,6 @@ def test_activate_model_syncs_vision_flag(cfg: Config):
     cfg.add_model({
         "id": "textonly",
         "name": "Text Only",
-        "api_key_env": "ALPHA_KEY",
         "model": "text-1",
         "vision": False,
     })

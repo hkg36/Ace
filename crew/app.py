@@ -2045,7 +2045,6 @@ class CrewApp:
                 "id": model_id,
                 "name": payload.get("name", current.name),
                 "api_key": api_key or preserved_key,
-                "api_key_env": payload.get("api_key_env", current.api_key_env),
                 "provider": payload.get("provider", current.provider),
                 "base_url": payload.get("base_url", current.base_url),
                 "model": payload.get("model", current.model),

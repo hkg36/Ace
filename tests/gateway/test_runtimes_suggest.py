@@ -382,7 +382,6 @@ async def test_team_ai_routes_use_current_owner_model_and_close_request_provider
         id="owner-model",
         name="Owner Model",
         api_key="test-owner-api-key",
-        api_key_env="OWNER_MODEL_API_KEY",
         base_url="https://api.example.com/v1",
         model="owner-model-name",
     )

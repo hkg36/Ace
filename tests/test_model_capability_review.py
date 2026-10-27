@@ -25,7 +25,6 @@ def _profile(
     return ModelProfile(
         id=model_id,
         api_key=f"key-{model_id}",
-        api_key_env=f"KEY_{model_id.upper()}",
         model=f"model-{model_id}",
         loaded=True,
         builtin=builtin,

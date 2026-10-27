@@ -40,7 +40,6 @@ def _bootstrap_tmp_env(tmp_path: Path) -> Path:
                 "alpha": {
                     "name": "Alpha",
                     "api_key": "sk-alpha-xxx",
-                    "api_key_env": "TEST_ALPHA_API_KEY",
                     "base_url": "https://alpha.example.com/v1",
                     "model": "alpha-1",
                 },
@@ -67,7 +66,6 @@ def _bootstrap_tmp_env(tmp_path: Path) -> Path:
                         "beta": {
                             "name": "Beta",
                             "api_key": "sk-beta-xxx",
-                            "api_key_env": "TEST_BETA_API_KEY",
                             "base_url": "https://beta.example.com/v1",
                             "model": "beta-1",
                             "loaded": False,
@@ -108,7 +106,6 @@ async def test_create_model_success(api, tmp_path: Path, auth_headers):
         resp = await client.post("/api/config/models", json={
             "id": "gamma",
             "name": "Gamma",
-            "api_key_env": "TEST_GAMMA_API_KEY",
             "base_url": "https://gamma.example.com/v1",
             "model": "gamma-1",
             "api_key": "sk-gamma-xxx",
@@ -119,7 +116,6 @@ async def test_create_model_success(api, tmp_path: Path, auth_headers):
     assert data["profile"]["id"] == "gamma"
     assert data["profile"]["model"] == "gamma-1"
     assert data["profile"]["api_key"] == "sk-gamma-xxx"
-    assert data["profile"]["api_key_env"] == "TEST_GAMMA_API_KEY"
     assert data["profile"]["loaded"] is True
     # 列表应包含 3 个
     ids = {m["id"] for m in data["models"]}
@@ -181,7 +177,6 @@ async def test_local_owner_can_create_model(api, auth_headers):
     async with AsyncClient(transport=transport, base_url="http://test", headers=auth_headers) as client:
         resp = await client.post("/api/config/models", json={
             "id": "personal",
-            "api_key_env": "TEST_PERSONAL_API_KEY",
             "model": "p-1",
             "api_key": "sk-personal",
         })
@@ -197,7 +192,6 @@ async def test_owner_private_model_is_not_visible_to_other_owner(api, auth_heade
     async with AsyncClient(transport=transport, base_url="http://test", headers=auth_headers) as client:
         created = await client.post("/api/config/models", json={
             "id": "personal",
-            "api_key_env": "TEST_PERSONAL_API_KEY",
             "model": "p-1",
             "api_key": "sk-personal",
         })
@@ -223,7 +217,6 @@ async def test_switch_model_is_owner_scoped(api, auth_headers, monkeypatch):
     async with AsyncClient(transport=transport, base_url="http://test", headers=auth_headers) as client:
         created = await client.post("/api/config/models", json={
             "id": "personal",
-            "api_key_env": "TEST_PERSONAL_API_KEY",
             "model": "p-1",
             "api_key": "sk-personal",
         })
@@ -376,7 +369,6 @@ async def test_create_model_writes_key_to_yaml_not_env(api, tmp_path: Path, auth
     async with AsyncClient(transport=transport, base_url="http://test", headers=auth_headers) as client:
         resp = await client.post("/api/config/models", json={
             "id": "delta",
-            "api_key_env": "TEST_DELTA_API_KEY",
             "base_url": "",
             "model": "d-1",
             "api_key": "sk-delta-secret",
@@ -389,16 +381,14 @@ async def test_create_model_writes_key_to_yaml_not_env(api, tmp_path: Path, auth
 
 
 @pytest.mark.asyncio
-async def test_create_model_ignores_api_key_environment_name(api, auth_headers, tmp_path, monkeypatch):
-    """旧 api_key_env 字段不再用于读取密钥或修改进程环境。"""
+async def test_create_model_without_api_key_does_not_change_crew_home(api, auth_headers, tmp_path, monkeypatch):
     protected_home = str(tmp_path / "keep-this-home")
     monkeypatch.setenv("CREW_HOME", protected_home)
     transport = ASGITransport(app=api)
     async with AsyncClient(transport=transport, base_url="http://test", headers=auth_headers) as client:
         resp = await client.post("/api/config/models", json={
-            "id": "legacy-env",
-            "api_key_env": "CREW_HOME",
-            "model": "legacy-env-1",
+            "id": "no-key",
+            "model": "no-key-1",
         })
 
     assert resp.status_code == 201
@@ -431,7 +421,6 @@ async def test_create_model_persists_to_yaml(api, tmp_path: Path, auth_headers):
     async with AsyncClient(transport=transport, base_url="http://test", headers=auth_headers) as client:
         await client.post("/api/config/models", json={
             "id": "gamma",
-            "api_key_env": "TEST_GAMMA_API_KEY",
             "model": "g-1",
         })
 
@@ -445,7 +434,6 @@ async def test_create_model_persists_api_key_in_owner_yaml(api, tmp_path: Path, 
     async with AsyncClient(transport=transport, base_url="http://test", headers=auth_headers) as client:
         created = await client.post("/api/config/models", json={
             "id": "yaml-key",
-            "api_key_env": "TEST_GAMMA_API_KEY",
             "model": "yaml-key-model",
             "api_key": "key-persisted-in-yaml",
         })
@@ -549,13 +537,6 @@ async def test_update_active_model_rebuilds_provider(api, auth_headers):
         resp1 = await client.get("/api/config")
         assert resp1.json()["has_key"] is True
 
-        # 修改旧 api_key_env 元数据不会替换或重新读取模型密钥。
-        resp2 = await client.put("/api/config/models/beta", json={
-            "api_key_env": "NONEXISTENT_API_KEY_VAR_XYZ",
-        })
-    assert resp2.status_code == 200
-    assert resp2.json()["has_key"] is True
-
 
 @pytest.mark.asyncio
 async def test_config_includes_all_model_profiles_for_settings(api, auth_headers):
@@ -565,7 +546,6 @@ async def test_config_includes_all_model_profiles_for_settings(api, auth_headers
         id="no_key",
         name="No Key",
         api_key="",
-        api_key_env="NO_API_KEY_ENV",
         model="no-key-model",
     )
     app_crew.config.persist_owner_model_profiles("A:uid-a", profiles, active_model_id=app_crew.config.owner_active_model_id("A:uid-a"))
@@ -634,7 +614,6 @@ async def test_delete_model_keeps_shared_env_key_for_remaining_profile(api, auth
         id="shared",
         name="Shared",
         api_key="sk-beta",
-        api_key_env="TEST_BETA_API_KEY",
         base_url="https://shared.example.com/v1",
         model="shared-1",
         loaded=True,
@@ -696,7 +675,6 @@ async def test_crud_chain(api, tmp_path: Path, auth_headers):
         # 1. 新增 gamma
         r1 = await client.post("/api/config/models", json={
             "id": "gamma",
-            "api_key_env": "TEST_GAMMA_API_KEY",
             "base_url": "https://gamma.example.com/v1",
             "model": "gamma-1",
             "api_key": "sk-gamma",

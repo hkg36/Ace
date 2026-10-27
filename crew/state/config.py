@@ -113,7 +113,6 @@ class ModelProfile:
     id: str
     name: str = ""
     api_key: str = ""
-    api_key_env: str = "CREW_API_KEY"  # Legacy metadata; never used to read a secret.
     provider: str = "openai"
     base_url: str = ""
     model: str = "gpt-4o-mini"
@@ -165,7 +164,6 @@ class ModelProfile:
             "name": self.label,
             "model": self.model,
             "base_url": self.base_url,
-            "api_key_env": self.api_key_env,
             "provider": self.provider,
             "system_prompt": self.system_prompt,
             "has_key": self.has_key,
@@ -200,7 +198,6 @@ def is_placeholder_model_profile(profile: ModelProfile | None) -> bool:
 class Config:
     # --- LLM ---
     api_key: str = ""
-    api_key_env: str = "CREW_API_KEY"  # Legacy metadata; never used to read a secret.
     provider: str = "openai"
     base_url: str = ""
     model: str = "gpt-4o-mini"
@@ -357,7 +354,6 @@ class Config:
             self.model_profiles["default"] = ModelProfile(
                 id="default",
                 api_key=self.api_key,
-                api_key_env=self.api_key_env,
                 provider=self.provider,
                 base_url=self.base_url,
                 model=self.model,
@@ -378,7 +374,6 @@ class Config:
         self.active_model_id = model_id
         profile = self.model_profiles[model_id]
         self.api_key = profile.api_key
-        self.api_key_env = profile.api_key_env
         self.provider = profile.provider
         self.base_url = profile.base_url
         self.model = profile.model
@@ -682,7 +677,6 @@ class Config:
             "id": model_id,
             "name": profile_data.get("name", current.name),
             "api_key": api_key,
-            "api_key_env": profile_data.get("api_key_env", current.api_key_env),
             "provider": profile_data.get("provider", current.provider),
             "base_url": profile_data.get("base_url", current.base_url),
             "model": profile_data.get("model", current.model),
@@ -1089,7 +1083,6 @@ def _model_capabilities(raw: dict[str, Any]) -> list[str]:
 
 
 def _build_model_profile(model_id: str, raw: dict[str, Any]) -> ModelProfile:
-    api_key_env = str(raw.get("api_key_env") or "CREW_API_KEY")
     api_key = str(raw.get("api_key") or "")
     capabilities = _model_capabilities(raw)
 
@@ -1097,7 +1090,6 @@ def _build_model_profile(model_id: str, raw: dict[str, Any]) -> ModelProfile:
         id=model_id,
         name=str(raw.get("name") or model_id),
         api_key=api_key,
-        api_key_env=api_key_env,
         provider=str(raw.get("provider") or "openai").strip().lower() or "openai",
         base_url=str(raw.get("base_url") or ""),
         model=str(raw.get("model") or "gpt-4o-mini"),
@@ -1116,14 +1108,12 @@ def _build_model_profile(model_id: str, raw: dict[str, Any]) -> ModelProfile:
 
 
 def _build_owner_model_profile(model_id: str, raw: dict[str, Any]) -> ModelProfile:
-    api_key_env = str(raw.get("api_key_env") or "CREW_API_KEY")
     api_key = str(raw.get("api_key") or "")
     capabilities = _model_capabilities(raw)
     return ModelProfile(
         id=model_id,
         name=str(raw.get("name") or model_id),
         api_key=api_key,
-        api_key_env=api_key_env,
         provider=str(raw.get("provider") or "openai").strip().lower() or "openai",
         base_url=str(raw.get("base_url") or ""),
         model=str(raw.get("model") or "gpt-4o-mini"),
@@ -1145,14 +1135,12 @@ def _build_profile_from_payload(model_id: str, payload: dict[str, Any]) -> Model
 
     Payload 中未提供 key 时使用空值；模型密钥只由软件配置管理。
     """
-    api_key_env = str(payload.get("api_key_env") or "CREW_API_KEY").strip() or "CREW_API_KEY"
     api_key = str(payload.get("api_key") or "")
     capabilities = _model_capabilities(payload)
     return ModelProfile(
         id=model_id,
         name=str(payload.get("name") or model_id),
         api_key=api_key,
-        api_key_env=api_key_env,
         provider=str(payload.get("provider") or "openai").strip().lower() or "openai",
         base_url=str(payload.get("base_url") or ""),
         model=str(payload.get("model") or "gpt-4o-mini"),
@@ -1173,7 +1161,6 @@ def _serialize_profile_for_yaml(profile: ModelProfile) -> dict[str, Any]:
     """把 ModelProfile 序列化为 YAML 配置字段，包括 API Key 明文。"""
     data: dict[str, Any] = {
         "name": profile.name or profile.id,
-        "api_key_env": profile.api_key_env,
         "provider": profile.provider,
         "base_url": profile.base_url,
         "model": profile.model,
@@ -1416,7 +1403,6 @@ def load_config(config_path: str | Path | None = None) -> Config:
                 if isinstance(raw, dict):
                     cfg.model_profiles[str(model_id)] = _build_model_profile(str(model_id), raw)
         else:
-            cfg.api_key_env = llm.get("api_key_env", cfg.api_key_env)
             cfg.provider = str(llm.get("provider", cfg.provider) or cfg.provider).strip().lower()
             cfg.base_url = llm.get("base_url", cfg.base_url)
             cfg.model = llm.get("model", cfg.model)
@@ -1697,7 +1683,6 @@ def load_config(config_path: str | Path | None = None) -> Config:
             "default",
             {
                 "name": "default",
-                "api_key_env": cfg.api_key_env,
                 "provider": cfg.provider,
                 "base_url": cfg.base_url,
                 "model": cfg.model,

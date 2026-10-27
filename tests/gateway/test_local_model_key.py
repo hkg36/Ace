@@ -27,7 +27,6 @@ def _write_config(tmp_path: Path, *, dev_mode: bool = False) -> Path:
                     "models": {
                         "default": {
                             "name": "Default",
-                            "api_key_env": "CREW_MODEL_API_KEY",
                             "provider": "openai",
                             "base_url": "https://xxx/v1",
                             "model": "test-model",
