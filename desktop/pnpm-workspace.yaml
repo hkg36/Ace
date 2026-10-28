@@ -3,3 +3,5 @@ allowBuilds:
   electron-winstaller: true
   esbuild: false
   ssh2: true
+minimumReleaseAgeExclude:
+  - electron@45.1.0
