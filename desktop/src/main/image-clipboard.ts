@@ -1,6 +1,6 @@
 /** Safe local-image -> OS clipboard bridge used by the trusted renderer IPC. */
 
-import { clipboard, nativeImage, type NativeImage } from 'electron';
+import { ClipboardItem, clipboard, nativeImage, type NativeImage } from 'electron';
 import { IPC_ARG_VALIDATION_FAILED } from '../shared/constants';
 import {
   readResolvedCrewFile,
@@ -13,12 +13,18 @@ const MAX_CLIPBOARD_IMAGE_PIXELS = 80_000_000;
 
 interface ImageClipboardDeps {
   decode: (bytes: Buffer) => Pick<NativeImage, 'getSize' | 'isEmpty'>;
-  write: (image: Pick<NativeImage, 'getSize' | 'isEmpty'>) => void;
+  write: (image: Pick<NativeImage, 'getSize' | 'isEmpty'>) => void | Promise<void>;
 }
 
 const defaultDeps: ImageClipboardDeps = {
   decode: (bytes) => nativeImage.createFromBuffer(bytes),
-  write: (image) => clipboard.writeImage(image as NativeImage),
+  write: (image) => clipboard.write([
+    new ClipboardItem({
+      'image/png': new Blob([new Uint8Array((image as NativeImage).toPNG())], {
+        type: 'image/png',
+      }),
+    }),
+  ]),
 };
 
 /** Authorize a renderer-provided path in the current account's canonical image
@@ -90,6 +96,6 @@ export async function writeOwnedImageToClipboard(
   if (!authorizationStillCurrent()) {
     throw new Error(`${IPC_ARG_VALIDATION_FAILED}: image account changed`);
   }
-  deps.write(image);
+  await deps.write(image);
   return { ok: true };
 }

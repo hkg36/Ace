@@ -2,10 +2,19 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { ClipboardItem, clipboard, nativeImage } from 'electron';
 import {
   authorizeOwnedImagePath,
   writeOwnedImageToClipboard,
 } from '../../src/main/image-clipboard';
+
+vi.mock('electron', () => ({
+  ClipboardItem: vi.fn(class {
+    constructor(readonly data: Record<string, Blob>) {}
+  }),
+  clipboard: { write: vi.fn(async () => undefined) },
+  nativeImage: { createFromBuffer: vi.fn() },
+}));
 
 const OWNER = 'acct_0123456789abcdef';
 let crewHome = '';
@@ -55,6 +64,44 @@ describe('writeOwnedImageToClipboard', () => {
       .resolves.toEqual({ ok: true });
     expect(decode).toHaveBeenCalledWith(Buffer.from('fake-png'));
     expect(write).toHaveBeenCalledWith(decoded);
+  });
+
+  it('使用异步 ClipboardItem API 写入 PNG', async () => {
+    const png = Buffer.from('encoded-png');
+    vi.mocked(nativeImage.createFromBuffer).mockReturnValue({
+      isEmpty: () => false,
+      getSize: () => ({ width: 10, height: 10 }),
+      toPNG: () => png,
+    } as ReturnType<typeof nativeImage.createFromBuffer>);
+
+    await expect(writeOwnedImageToClipboard(imagePath, crewHome, OWNER))
+      .resolves.toEqual({ ok: true });
+    expect(ClipboardItem).toHaveBeenCalledWith({ 'image/png': expect.any(Blob) });
+    const payload = vi.mocked(ClipboardItem).mock.calls[0][0]['image/png'];
+    expect(payload).toBeInstanceOf(Blob);
+    expect(await (payload as Blob).text()).toBe('encoded-png');
+    expect(clipboard.write).toHaveBeenCalledWith([expect.any(ClipboardItem)]);
+  });
+
+  it('等待异步写入完成才返回成功，并传播系统剪贴板错误', async () => {
+    const decode = () => ({
+      isEmpty: () => false,
+      getSize: () => ({ width: 10, height: 10 }),
+    });
+    let finish!: () => void;
+    const write = vi.fn(() => new Promise<void>((resolve) => { finish = resolve; }));
+    let settled = false;
+    const result = writeOwnedImageToClipboard(imagePath, crewHome, OWNER, { decode, write });
+    void result.then(() => { settled = true; });
+    await vi.waitFor(() => expect(write).toHaveBeenCalledOnce());
+    expect(settled).toBe(false);
+    finish();
+    await expect(result).resolves.toEqual({ ok: true });
+
+    await expect(writeOwnedImageToClipboard(imagePath, crewHome, OWNER, {
+      decode,
+      write: async () => { throw new Error('clipboard unavailable'); },
+    })).rejects.toThrow('clipboard unavailable');
   });
 
   it('拒绝未登录身份、越界路径与异常大像素图片', async () => {

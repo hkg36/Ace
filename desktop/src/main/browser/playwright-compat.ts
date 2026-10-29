@@ -7,7 +7,7 @@
  * - 不允许业务代码 `import 'playwright-core/lib/**'`；
  * - 本文件唯一例外是解析包 exports 明确暴露的 `lib/coreBundle`，用来取得官方
  *   InjectedScript；其 bundle 布局无兼容承诺，所以必须由结构校验和真实契约兜住；
- * - 版本在 package.json 里锁死（当前 `1.62.0`，不带 `^`），升级走单独 PR。
+ * - 版本在 package.json 里锁死（当前 `1.64.1`，不带 `^`），升级走单独 PR。
  *
  * ## 用到的非文档化表面（升级必查）
  *

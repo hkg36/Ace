@@ -19,7 +19,7 @@
  * 退出码非 0 即契约破裂。
  */
 
-import { app, BrowserWindow, clipboard, WebContentsView } from 'electron';
+import { app, BrowserWindow, ClipboardItem, clipboard, nativeImage, WebContentsView } from 'electron';
 import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
@@ -28,6 +28,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { BrowserHost } from '../src/main/browser-host';
+import { writeOwnedImageToClipboard } from '../src/main/image-clipboard';
 import {
   parseRecorderEvent,
   RECORDER_EVENT_SCHEMA_VERSION,
@@ -67,6 +68,24 @@ const FIXTURE = path.join(here, 'fixtures', 'pw-contract-page.html');
 
 const results: Array<{ name: string; ok: boolean; detail: string }> = [];
 
+async function cleanupContractDirectory(directory: string): Promise<void> {
+  if (process.platform === 'win32' && process.env.CREW_PW_CONTRACT_TEMP_ROOT) {
+    console.log(`CLEANUP deferred until Electron exits: ${directory}`);
+    return;
+  }
+  await rm(directory, { recursive: true, force: true });
+}
+
+async function snapshotClipboard(): Promise<ClipboardItem[]> {
+  const items = await clipboard.read();
+  return await Promise.all(items.map(async (item) => new ClipboardItem(
+    Object.fromEntries(await Promise.all(item.types.map(async (type) => [
+      type,
+      await item.getType(type),
+    ]))),
+  )));
+}
+
 async function check(name: string, run: () => Promise<string>): Promise<void> {
   const filter = process.env.CREW_PW_CONTRACT_FILTER;
   if (filter && !name.includes(filter)) return;
@@ -78,7 +97,7 @@ async function check(name: string, run: () => Promise<string>): Promise<void> {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     results.push({ name, ok: false, detail: message.split('\n')[0].slice(0, 160) });
-    console.log(`FAIL  ${name}: ${message.split('\n')[0].slice(0, 160)}`);
+    console.log(`FAIL  ${name}: ${message}`);
   }
 }
 
@@ -612,6 +631,38 @@ app.whenReady().then(async () => {
   const page = context.pages()[0];
   page.setDefaultTimeout(10_000);
 
+  await check('系统剪贴板：授权图片通过异步 ClipboardItem 写入并读回', async () => {
+    const previous = await snapshotClipboard();
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'crew-pw-clipboard-'));
+    const owner = 'acct_0123456789abcdef';
+    const directory = path.join(tempRoot, 'accounts', owner, 'task_workspaces', 'clipboard');
+    await mkdir(directory, { recursive: true });
+    const imagePath = path.join(directory, 'pixel.png');
+    await writeFile(imagePath, nativeImage.createFromBitmap(
+      Buffer.from([0, 0, 255, 255]),
+      { width: 1, height: 1 },
+    ).toPNG());
+    try {
+      await writeOwnedImageToClipboard(imagePath, tempRoot, owner);
+      const items = await clipboard.read();
+      const item = items.find((entry) => entry.types.includes('image/png'));
+      if (!item) throw new Error('系统剪贴板缺少 image/png');
+      const blob = await item.getType('image/png');
+      const image = nativeImage.createFromBuffer(Buffer.from(await blob.arrayBuffer()));
+      const size = image.getSize();
+      if (image.isEmpty() || size.width !== 1 || size.height !== 1) {
+        throw new Error('系统剪贴板 PNG 解码或尺寸不匹配');
+      }
+      return 'ClipboardItem image/png；await write/read；1×1 PNG round-trip';
+    } finally {
+      try {
+        await clipboard.write(previous);
+      } finally {
+        await cleanupContractDirectory(tempRoot);
+      }
+    }
+  });
+
   // ── 条件 1：不开焦点模拟时，后台点击应当是失败的 ──────────────────────
   // 这条断言的是「我们没有白加这个开关」。若哪天 Electron/Chromium 变了行为
   // 使它不再必要，这里会失败，提醒我们回头简化而不是继续背着它。
@@ -917,7 +968,7 @@ app.whenReady().then(async () => {
         pdfContents.close({ waitForBeforeUnload: false });
       }
       pdfHost.dispose();
-      await rm(tempRoot, { recursive: true, force: true });
+      await cleanupContractDirectory(tempRoot);
     }
   });
 
@@ -1404,6 +1455,20 @@ app.whenReady().then(async () => {
     }
     if (!seen) throw new Error('未收到 dialog 事件');
     return seen;
+  });
+
+  await check('Electron 原生后台截图（窗口全程不可见）', async () => {
+    const image = await contractDeadline(
+      view.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true }),
+      10_000,
+      'Electron capturePage',
+    );
+    const shot = image.toPNG();
+    if (image.isEmpty() || shot.length < 1000) throw new Error('原生截图为空或过小');
+    const width = shot.readUInt32BE(16);
+    const height = shot.readUInt32BE(20);
+    if (width <= 0 || height <= 0) throw new Error('原生截图尺寸无效');
+    return `${width}x${height}；${shot.length} bytes；stayHidden/stayAwake`;
   });
 
   await check('后台截图（窗口全程不可见）', async () => {
@@ -2633,7 +2698,7 @@ app.whenReady().then(async () => {
     } finally {
       await consoleHost.dispose().catch(() => undefined);
       if (!panelWindow.isDestroyed()) panelWindow.destroy();
-      await rm(tempRoot, { recursive: true, force: true });
+      await cleanupContractDirectory(tempRoot);
     }
   });
 
@@ -2966,7 +3031,7 @@ app.whenReady().then(async () => {
     } finally {
       await downloadHost.dispose().catch(() => undefined);
       if (!panelWindow.isDestroyed()) panelWindow.destroy();
-      await rm(tempRoot, { recursive: true, force: true });
+      await cleanupContractDirectory(tempRoot);
     }
   });
 
@@ -3041,6 +3106,25 @@ app.whenReady().then(async () => {
       if (!targetRef) {
         throw new Error(`用户输出快照缺少 target ref: ${snapshotText.slice(0, 500)}`);
       }
+
+      await check('BrowserHost 原生视觉截图：PNG/物理像素/视觉 epoch', async () => {
+        const output = path.join(artifacts, 'native-viewport.png');
+        const result = await execute('vision_screenshot', [output]);
+        const bytes = await readFile(output);
+        const width = bytes.readUInt32BE(16);
+        const height = bytes.readUInt32BE(20);
+        if (
+          !bytes.subarray(0, 8).equals(
+            Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+          )
+          || result.width !== width
+          || result.height !== height
+          || !/^[0-9a-f]{32}$/.test(String(result.host_epoch ?? ''))
+        ) {
+          throw new Error('原生视觉截图尺寸/PNG/epoch 不匹配');
+        }
+        return `${width}x${height}；${bytes.length} bytes；host_epoch`;
+      });
 
       const elementPng = path.join(artifacts, 'element.png');
       const elementShot = await execute('screenshot', [
@@ -3184,7 +3268,7 @@ app.whenReady().then(async () => {
     } finally {
       await outputHost.dispose().catch(() => undefined);
       if (!panelWindow.isDestroyed()) panelWindow.destroy();
-      await rm(tempRoot, { recursive: true, force: true });
+      await cleanupContractDirectory(tempRoot);
     }
   });
 
@@ -3472,7 +3556,7 @@ app.whenReady().then(async () => {
     } finally {
       await runHost.dispose().catch(() => undefined);
       if (!panelWindow.isDestroyed()) panelWindow.destroy();
-      await rm(tempRoot, { recursive: true, force: true });
+      await cleanupContractDirectory(tempRoot);
     }
   });
 
@@ -3619,7 +3703,7 @@ app.whenReady().then(async () => {
     } finally {
       await lifecycleHost.dispose().catch(() => undefined);
       if (!panelWindow.isDestroyed()) panelWindow.destroy();
-      await rm(tempRoot, { recursive: true, force: true });
+      await cleanupContractDirectory(tempRoot);
     }
   });
 
@@ -3779,7 +3863,7 @@ app.whenReady().then(async () => {
     } finally {
       await findHost.dispose().catch(() => undefined);
       if (!panelWindow.isDestroyed()) panelWindow.destroy();
-      await rm(tempRoot, { recursive: true, force: true });
+      await cleanupContractDirectory(tempRoot);
     }
   });
 
@@ -3925,7 +4009,7 @@ app.whenReady().then(async () => {
     } finally {
       await popupHost.dispose().catch(() => undefined);
       if (!panelWindow.isDestroyed()) panelWindow.destroy();
-      await rm(tempRoot, { recursive: true, force: true });
+      await cleanupContractDirectory(tempRoot);
     }
   });
 
@@ -4566,7 +4650,7 @@ app.whenReady().then(async () => {
         );
       } finally {
         if (!panelWindow.isDestroyed()) panelWindow.destroy();
-        await rm(tempRoot, { recursive: true, force: true });
+        await cleanupContractDirectory(tempRoot);
       }
     }
   };
@@ -5195,7 +5279,7 @@ app.whenReady().then(async () => {
       ]);
       if (!recorderWindow.isDestroyed()) recorderWindow.destroy();
       if (!replayWindow.isDestroyed()) replayWindow.destroy();
-      await rm(tempRoot, { recursive: true, force: true });
+      await cleanupContractDirectory(tempRoot);
       if (previousV11Gate === undefined) {
         delete process.env.CREW_BROWSER_RECORDING_V11_PHASE_A;
       } else {
@@ -5580,7 +5664,7 @@ app.whenReady().then(async () => {
     } finally {
       await host.dispose().catch(() => undefined);
       if (!panelWindow.isDestroyed()) panelWindow.destroy();
-      await rm(tempRoot, { recursive: true, force: true });
+      await cleanupContractDirectory(tempRoot);
       if (previousV11Gate === undefined) {
         delete process.env.CREW_BROWSER_RECORDING_V11_PHASE_A;
       } else {
@@ -5605,11 +5689,13 @@ app.whenReady().then(async () => {
     const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'crew-pw-recorder-'));
     const profile = path.join(tempRoot, 'accounts', accountDir, 'browser', 'profile');
     await mkdir(profile, { recursive: true });
-    const uploadOne = path.join(tempRoot, 'contract-one.pdf');
-    const uploadTwo = path.join(tempRoot, 'contract-two.png');
+    const uploads = path.join(path.dirname(profile), 'approved-uploads');
+    await mkdir(uploads, { recursive: true });
+    const uploadOne = path.join(uploads, 'contract-one.pdf');
+    const uploadTwo = path.join(uploads, 'contract-two.png');
     await writeFile(uploadOne, 'first recorder upload fixture', 'utf8');
     await writeFile(uploadTwo, 'second recorder upload fixture', 'utf8');
-    const clipboardBeforeContract = clipboard.readText();
+    const clipboardBeforeContract = await snapshotClipboard();
     const panelWindow = new BrowserWindow({
       show: false,
       width: 1100,
@@ -6037,7 +6123,7 @@ app.whenReady().then(async () => {
       }
 
       // A real OS clipboard paste must be represented only by the final trusted input.
-      clipboard.writeText('真实系统粘贴文本');
+      await clipboard.writeText('真实系统粘贴文本');
       const pasteInput = recorderPage.locator('#recorder-paste-input');
       await pasteInput.press('ControlOrMeta+V');
       await recorderPage.locator('#recorder-keyboard-button').focus();
@@ -6595,10 +6681,10 @@ app.whenReady().then(async () => {
       }
       return `same + ${oopifSessionIds.length} OOPIF；${countAfterStop} steps；stop clean`;
     } finally {
-      clipboard.writeText(clipboardBeforeContract);
+      await clipboard.write(clipboardBeforeContract);
       await recorderHost.dispose().catch(() => undefined);
       if (!panelWindow.isDestroyed()) panelWindow.destroy();
-      await rm(tempRoot, { recursive: true, force: true });
+      await cleanupContractDirectory(tempRoot);
     }
   });
 

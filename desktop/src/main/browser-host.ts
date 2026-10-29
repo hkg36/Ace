@@ -2845,7 +2845,13 @@ export class BrowserHost extends EventEmitter {
         () => this.capturePanel(request, undefined, undefined, true),
       );
     }
-    const image = await tab.view.webContents.capturePage();
+    const image = await tab.view.webContents.capturePage(undefined, {
+      stayHidden: true,
+      stayAwake: true,
+    });
+    if (image.isEmpty()) {
+      throw new BrowserHostError('浏览器截图为空', { code: 'invalid_screenshot' });
+    }
     const size = image.getSize();
     return {
       dataUrl: image.toDataURL(),
@@ -7979,21 +7985,16 @@ export class BrowserHost extends EventEmitter {
     height: number;
     hash: string;
   }> {
-    const captured = await this.send(tab, 'Page.captureScreenshot', {
-      format: 'png',
-      fromSurface: true,
-      captureBeyondViewport: false,
+    const captured = await tab.view.webContents.capturePage(undefined, {
+      stayHidden: true,
+      stayAwake: true,
     });
-    const data = String(captured?.data ?? '');
-    if (
-      !data
-      || !/^[A-Za-z0-9+/]+={0,2}$/.test(data)
-    ) {
-      throw new BrowserHostError('浏览器截图数据无效', {
+    if (captured.isEmpty()) {
+      throw new BrowserHostError('浏览器截图为空', {
         code: 'invalid_screenshot',
       });
     }
-    const image = Buffer.from(data, 'base64');
+    const image = captured.toPNG();
     const pngSignature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
     const width = image.length >= 24 ? image.readUInt32BE(16) : 0;
     const height = image.length >= 24 ? image.readUInt32BE(20) : 0;

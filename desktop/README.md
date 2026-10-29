@@ -104,6 +104,39 @@ npm run test:visual
 
 提交 Desktop 改动前至少运行 `npm run check`。涉及布局、引导或 Browser 面板时，再运行对应的 Playwright 视觉测试。
 
+### Electron / 内置浏览器升级验证
+
+当前 Electron 锁定为 `45.1.0`；`playwright-core` 与 `@playwright/test` 必须同时锁定为
+`1.64.1`，并同步 npm、pnpm 锁文件。内置浏览器直接使用 Electron 的 Chromium，
+不需要安装额外的 Playwright Chromium；上面的安装命令仅用于独立视觉测试。
+
+```bash
+npm run check:playwright-boundary
+npm run typecheck
+npm run build
+npm run test:pw-contract
+```
+
+真实契约使用隐藏 Electron 窗口验证点击、快照、跨域框架、弹窗、下载、上传、录制回放、
+AI/人工接管切换及系统剪贴板图片读回。运行器隔离临时数据目录，并在 Electron 退出后
+清理 Windows 上仍被 Session 锁定的 Profile 文件。测试会短暂使用系统剪贴板，结束后恢复内容。
+
+Windows 本地升级检查仍发现隐藏窗口的 `Page.captureScreenshot` 请求不返回，
+导致 Playwright 页面截图和元素截图超时；关闭 GPU 或窗口遮挡计算未解决。
+视觉操作的 `vision_screenshot` 和浏览器面板截图改用原生
+`webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })`，
+不显示隐藏窗口，并保留 PNG 物理像素尺寸与视觉 epoch 的校验。空图或原生捕获错误明确上报，
+不回退到可能挂起的 CDP 截图。
+
+原生 API 捕获当前视口，不等同于 Playwright 的整页、元素及 CSS 缩放截图。
+用户导出的 `screenshot` 和公开的 Playwright `Page/Locator.screenshot()` 仍保留原实现，
+对应契约尚未通过，不能仅凭原生视口截图成功就认定全部截图兼容。
+其他平台与打包产物仍需分别验证。
+
+Electron 45 的剪贴板使用异步 `ClipboardItem` API，写入完成前不得向 IPC 调用方返回成功。
+另需注意账号 Cookie 和 SSH 密码目前仍使用 `safeStorage` 同步接口：45 中可用但已弃用，
+官方计划在 46 移除，升级 46 前需要迁移至异步接口。
+
 ## 本地预打包
 
 以下命令只生成 Electron 裸目录，不生成面向最终用户的正式安装器：

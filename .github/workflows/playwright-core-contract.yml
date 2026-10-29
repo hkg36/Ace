@@ -9,6 +9,8 @@ on:
       - "desktop/src/main/browser/**"
       - "desktop/src/main/browser-host.ts"
       - "desktop/scripts/pw-contract.ts"
+      - "desktop/scripts/pw-contract-run.mjs"
+      - "desktop/scripts/pw-contract.build.mjs"
       - "desktop/scripts/fixtures/**"
       - "desktop/scripts/check-playwright-boundary.mjs"
       - "desktop/scripts/resolve-playwright-candidates.mjs"
@@ -57,7 +59,6 @@ jobs:
       - name: Install Chromium host dependencies
         if: runner.os == 'Linux'
         run: sudo node node_modules/playwright-core/cli.js install-deps chromium
-      - run: npm run browser:stage
       - name: Real hidden Electron contract (Linux)
         if: runner.os == 'Linux'
         run: xvfb-run --auto-servernum npm run test:pw-contract
@@ -122,7 +123,6 @@ jobs:
       - name: Install Chromium host dependencies
         if: runner.os == 'Linux'
         run: sudo node node_modules/playwright-core/cli.js install-deps chromium
-      - run: npm run browser:stage
       - name: Real hidden Electron contract (Linux)
         if: runner.os == 'Linux'
         run: xvfb-run --auto-servernum npm run test:pw-contract

@@ -492,10 +492,16 @@ vi.mock('electron', async () => {
     }
 
     async capturePage(): Promise<any> {
+      const png = Buffer.alloc(25);
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(png);
+      png.writeUInt32BE(1024, 16);
+      png.writeUInt32BE(720, 20);
+      png[24] = electron.screenshotVersion;
       return {
+        isEmpty: () => false,
         getSize: () => ({ width: 1024, height: 720 }),
         toDataURL: () => 'data:image/png;base64,AA==',
-        toPNG: () => Buffer.from('png'),
+        toPNG: () => png,
       };
     }
   }
@@ -4439,11 +4445,19 @@ describe('BrowserHost', () => {
     })).rejects.toMatchObject({ code: 'capture_blocked' });
 
     await setMode(host, created.data.targetId, 'ai');
+    const capture = vi.spyOn(contents, 'capturePage');
     await expect(host.capturePanel({
       runtimeKey: RUNTIME_KEY,
       sessionId: SESSION_ID,
       tabLabel: TAB_LABEL,
     })).resolves.toMatchObject({ width: 1024, height: 720 });
+    expect(capture).toHaveBeenCalledWith(undefined, { stayHidden: true, stayAwake: true });
+    capture.mockResolvedValueOnce({ isEmpty: () => true });
+    await expect(host.capturePanel({
+      runtimeKey: RUNTIME_KEY,
+      sessionId: SESSION_ID,
+      tabLabel: TAB_LABEL,
+    })).rejects.toMatchObject({ code: 'invalid_screenshot' });
     contents.emit('render-process-gone', {}, { reason: 'crashed' });
     await expect(host.capturePanel({
       runtimeKey: RUNTIME_KEY,
@@ -7706,9 +7720,10 @@ describe('BrowserHost', () => {
     await host.dispose();
   });
 
-  it('captures a hidden model viewport through CDP as a bounded private PNG', async () => {
+  it('captures a hidden model viewport through capturePage as a bounded private PNG', async () => {
     const host = new BrowserHost(() => fakeWindow());
     await createTab(host);
+    const capture = vi.spyOn(electron.views[0].webContents, 'capturePage');
     const output = path.join(path.dirname(PROFILE), 'artifacts', 'hidden.png');
     await mkdir(path.dirname(output), { recursive: true });
     const result: any = await host.handleRpc({
@@ -7724,11 +7739,39 @@ describe('BrowserHost', () => {
     expect(result.data).toMatchObject({ path: output, width: 1024, height: 720 });
     expect(result.data.host_epoch).toMatch(/^[a-f0-9]{32}$/);
     expect(electron.views[0].visible).toBe(false);
-    expect(electron.views[0].webContents.debugger.commands).toContainEqual({
-      method: 'Page.captureScreenshot',
-      params: { format: 'png', fromSurface: true, captureBeyondViewport: false },
+    expect(capture).toHaveBeenCalledWith(undefined, {
+      stayHidden: true,
+      stayAwake: true,
     });
-    expect((await stat(output)).mode & 0o777).toBe(0o600);
+    expect(electron.views[0].webContents.debugger.commands.some(
+      (item: any) => item.method === 'Page.captureScreenshot',
+    )).toBe(false);
+    const mode = (await stat(output)).mode;
+    if (process.platform === 'win32') expect(mode & 0o200).toBe(0o200);
+    else expect(mode & 0o777).toBe(0o600);
+    await host.dispose();
+  });
+
+  it('rejects empty or failed native captures without writing an output file', async () => {
+    const host = new BrowserHost(() => fakeWindow());
+    await createTab(host);
+    const capture = vi.spyOn(electron.views[0].webContents, 'capturePage');
+    const output = path.join(path.dirname(PROFILE), 'artifacts', 'empty-native.png');
+    const request = {
+      runtime_key: RUNTIME_KEY,
+      method: 'execute',
+      params: {
+        profile_dir: PROFILE,
+        command: 'vision_screenshot',
+        args: [output],
+        proxy_url: PROXY_URL,
+      },
+    };
+    capture.mockResolvedValueOnce({ isEmpty: () => true });
+    await expect(host.handleRpc(request)).rejects.toMatchObject({ code: 'invalid_screenshot' });
+    capture.mockRejectedValueOnce(new Error('UnknownVizError'));
+    await expect(host.handleRpc(request)).rejects.toThrow('UnknownVizError');
+    await expect(stat(output)).rejects.toMatchObject({ code: 'ENOENT' });
     await host.dispose();
   });
 

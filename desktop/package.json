@@ -25,7 +25,7 @@
     "lint:css": "stylelint \"assets/styles/**/*.css\"",
     "test:visual": "playwright test --config=tests/visual/playwright.config.ts",
     "test:visual:update": "playwright test --config=tests/visual/playwright.config.ts --update-snapshots",
-    "test:pw-contract": "node scripts/pw-contract.build.mjs && electron scripts/pw-contract.mjs",
+    "test:pw-contract": "node scripts/pw-contract.build.mjs && node scripts/pw-contract-run.mjs",
     "refactor:audit-leaks": "node scripts/audit-css-leaks.mjs",
     "refactor:extract-tokens": "node scripts/extract-theme-tokens.mjs",
     "refactor:audit-font-sizes": "node scripts/audit-font-sizes.mjs",
@@ -54,7 +54,7 @@
     "micromark-extension-gfm": "^3.0.0",
     "micromark-extension-math": "^3.1.0",
     "pinyin-pro": "^3.29.5",
-    "playwright-core": "^1.64.1",
+    "playwright-core": "1.64.1",
     "pptx-svg": "0.6.4",
     "ssh2": "^1.17.0",
     "ws": "^8.22.0"
@@ -62,7 +62,7 @@
   "devDependencies": {
     "@eslint/js": "^9.39.5",
     "@fortawesome/free-solid-svg-icons": "^7.3.1",
-    "@playwright/test": "1.62.0",
+    "@playwright/test": "1.64.1",
     "@types/node": "^20.19.43",
     "@types/ssh2": "^1.15.6",
     "@types/ws": "^8.18.2",
