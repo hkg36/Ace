@@ -158,13 +158,13 @@ describe('双 Composer 实例隔离', () => {
     });
   });
 
-  it('只给主 Composer 提供 Welcome 猛虎爪装饰锚点', () => {
+  it('不再渲染 Welcome 爪印装饰', () => {
     const hostA = document.getElementById('host-a')!;
     const hostB = document.getElementById('host-b')!;
     const viewA = createPanelComposer(hostA, 'sid-a', stubAttachments());
     const viewB = createPanelComposer(hostB, 'sid-b', stubAttachments());
 
-    expect(hostA.querySelectorAll('.mw-composer__welcome-paw')).toHaveLength(2);
+    expect(hostA.querySelector('.mw-composer__welcome-paws')).toBeNull();
     expect(hostB.querySelector('.mw-composer__welcome-paws')).toBeNull();
 
     viewA.dispose();

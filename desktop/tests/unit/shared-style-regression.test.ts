@@ -107,16 +107,11 @@ describe('Crew shell and Welcome identity', () => {
     expect(shellCss).toContain('.mw-sidebar-brand__label');
   });
 
-  it('anchors the mascot and larger tiger paws to the Welcome project strip', () => {
-    expect(ruleBody(welcomeCss, '.welcome-view__mascot')).toContain('width: 184px');
+  it('keeps Welcome copy styling without paw decorations', () => {
     expect(ruleBody(welcomeCss, '.welcome-view__title')).toContain('font: 700');
-    const paw = ruleBody(welcomeCss, '.mw-composer__welcome-paw');
-    expect(paw).toContain('width: 38px');
-    expect(paw).toContain('border: 4px solid var(--mw-text-primary)');
-    expect(welcomeCss).toContain('.mw-composer__project:not([hidden])');
-    expect(ruleBody(welcomeCss, 'body.welcome-active #chat-composer-root')).toContain(
-      'position: relative',
-    );
-    expect(welcomeCss).toContain('@media (prefers-reduced-motion: reduce)');
+    expect(welcomeCss).not.toContain('welcome-view__mascot');
+    expect(welcomeCss).not.toContain('welcome-view__logo');
+    expect(welcomeCss).not.toContain('mw-composer__welcome-paw');
+    expect(welcomeCss).not.toContain('mw-composer__welcome-paws');
   });
 });

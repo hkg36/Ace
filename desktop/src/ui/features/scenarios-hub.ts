@@ -22,27 +22,6 @@ export interface WelcomeCopy {
   subtitle: string;
 }
 
-export const WELCOME_COPY_POOL: readonly WelcomeCopy[] = [
-  { title: '忙点好，忙点好。', subtitle: '说吧，今天又忙点啥？' },
-  { title: '天知地知，你知我知。', subtitle: '你就是最忙的牛马——今天先忙哪件？' },
-  { title: '一打开 Crew，我就知道你又有活了。', subtitle: '来吧，先从哪件开始？' },
-  { title: '活是一点没少。', subtitle: '不过没事，我陪你一起干。' },
-  { title: '来都来了。', subtitle: '咸鱼准备翻身了。' },
-  { title: '又见面了，小牛马。', subtitle: '今天先解决哪件麻烦事？' },
-];
-
-/** 同一个本地自然日稳定展示同一句，跨日后再轮换。 */
-export function welcomeCopyForDate(date = new Date()): WelcomeCopy {
-  if (!Number.isFinite(date.getTime())) return WELCOME_COPY_POOL[0];
-  const day = Math.floor(Date.UTC(
-    date.getFullYear(),
-    date.getMonth(),
-    date.getDate(),
-  ) / 86_400_000);
-  return WELCOME_COPY_POOL[((day % WELCOME_COPY_POOL.length) + WELCOME_COPY_POOL.length)
-    % WELCOME_COPY_POOL.length];
-}
-
 const FALLBACK_SCENARIOS: Scenario[] = [
   {
     id: 'fallback-fin',
@@ -85,13 +64,6 @@ function mountWelcomeView(): void {
   if (!host || host.querySelector('[data-welcome-view]')) return;
 
   const view = document.createElement('div');
-  const header = document.createElement('header');
-  const identity = document.createElement('div');
-  const mascot = document.createElement('div');
-  const logo = document.createElement('img');
-  const heading = document.createElement('div');
-  const title = document.createElement('h1');
-  const subtitle = document.createElement('p');
   const scenariosSection = document.createElement('section');
   const sectionHeader = document.createElement('header');
   const sectionTitle = document.createElement('h2');
@@ -103,24 +75,6 @@ function mountWelcomeView(): void {
   host.className = 'welcome-view-host';
   view.className = 'welcome-view';
   view.dataset.welcomeView = '';
-  header.className = 'welcome-view__header';
-  identity.className = 'welcome-view__identity';
-  mascot.className = 'welcome-view__mascot';
-  mascot.setAttribute('aria-hidden', 'true');
-  logo.className = 'welcome-view__logo';
-  logo.src = './icon.png';
-  logo.alt = '';
-  logo.decoding = 'async';
-  heading.className = 'welcome-view__heading';
-  const welcomeCopy = welcomeCopyForDate();
-  title.className = 'welcome-view__title';
-  title.textContent = welcomeCopy.title;
-  subtitle.className = 'welcome-view__subtitle';
-  subtitle.textContent = welcomeCopy.subtitle;
-  mascot.append(logo);
-  heading.append(title, subtitle, mascot);
-  identity.append(heading);
-  header.append(identity);
 
   scenariosSection.className = 'welcome-scenarios';
   scenariosSection.setAttribute('aria-labelledby', 'welcome-scenarios-title');
@@ -147,7 +101,7 @@ function mountWelcomeView(): void {
   items.setAttribute('aria-label', '场景操作');
   items.hidden = true;
   scenariosSection.append(sectionHeader, status, cards, items);
-  view.append(header, scenariosSection);
+  view.append(scenariosSection);
   host.replaceChildren(view);
 }
 
